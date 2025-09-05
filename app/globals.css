@@ -1,0 +1,135 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 142 69% 58%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 142 69% 58%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 221 83% 53%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .chat-bubble-user {
+    @apply bg-primary text-primary-foreground;
+  }
+  .chat-bubble-ai {
+    @apply bg-muted text-foreground;
+  }
+  .gradient-primary {
+    @apply bg-gradient-to-r from-primary to-secondary;
+  }
+  .security-glow {
+    @apply shadow-lg shadow-primary/20;
+  }
+  
+  /* Enhanced Light Mode Styles */
+  .light-mode-card {
+    @apply bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+  
+  .light-mode-input {
+    @apply bg-white border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20;
+  }
+  
+  .light-mode-button {
+    @apply bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400;
+  }
+  
+  .light-mode-primary-button {
+    @apply bg-blue-600 text-white border-0 hover:bg-blue-700 shadow-sm hover:shadow-md;
+  }
+  
+  /* Enhanced Dark Mode Styles */
+  .dark-mode-card {
+    @apply bg-gray-900 border border-gray-700 shadow-lg hover:shadow-xl transition-shadow duration-200;
+  }
+  
+  .dark-mode-input {
+    @apply bg-gray-800 border border-gray-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20;
+  }
+  
+  .dark-mode-button {
+    @apply bg-gray-800 border border-gray-600 text-gray-200 hover:bg-gray-700 hover:border-gray-500;
+  }
+  
+  .dark-mode-primary-button {
+    @apply bg-blue-600 text-white border-0 hover:bg-blue-700 shadow-lg hover:shadow-xl;
+  }
+  
+  /* Theme-aware transitions */
+  .theme-transition {
+    @apply transition-all duration-300 ease-in-out;
+  }
+  
+  /* Light mode specific shadows */
+  .light-shadow {
+    @apply shadow-sm shadow-gray-200/50;
+  }
+  
+  .light-shadow-hover {
+    @apply hover:shadow-md hover:shadow-gray-300/50;
+  }
+  
+  /* Dark mode specific shadows */
+  .dark-shadow {
+    @apply shadow-lg shadow-black/30;
+  }
+  
+  .dark-shadow-hover {
+    @apply hover:shadow-xl hover:shadow-black/40;
+  }
+}

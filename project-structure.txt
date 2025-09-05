@@ -1,0 +1,157 @@
+
+C:\Hendri Works\absk
+├── app
+├── components
+├── components.json
+├── contexts
+├── hooks
+├── lib
+├── next-env.d.ts
+├── next.config.js
+├── node_modules
+├── package-lock.json
+├── package.json
+├── postcss.config.js
+├── project-structure.txt
+├── README.md
+├── services
+├── tailwind.config.ts
+└── tsconfig.json
+
+directory: 7 file: 10
+
+
+
+[2K[1G
+
+Hendri@EC2AMAZ-6RIGOA4 MINGW64 /c/Hendri Works/absk
+$ echo "=== APP FOLDER ==="
+ls -la app/
+echo -e "\n=== COMPONENTS FOLDER ==="
+ls -la components/
+echo -e "\n=== CONTEXTS FOLDER ==="
+ls -la contexts/
+echo -e "\n=== HOOKS FOLDER ==="
+ls -la hooks/
+echo -e "\n=== LIB FOLDER ==="
+ls -la lib/
+echo -e "\n=== SERVICES FOLDER ==="
+ls -la services/
+=== APP FOLDER ===
+total 17
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 auth/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 chat/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 dashboard/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ekyc/
+-rw-r--r-- 1 Hendri 197121 1818 Sep  2 13:02 globals.css
+-rw-r--r-- 1 Hendri 197121 1112 Sep  2 13:02 layout.tsx
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 manual/
+-rw-r--r-- 1 Hendri 197121  500 Sep  2 13:02 page.tsx
+
+=== COMPONENTS FOLDER ===
+total 36
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:27 ../
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 auth/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 chat/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ekyc/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 landing/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 layout/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 manual/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 mode/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 providers/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ui/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 wallet/
+
+=== CONTEXTS FOLDER ===
+total 12
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 3192 Sep  2 13:02 AuthContext.tsx
+-rw-r--r-- 1 Hendri 197121  886 Sep  2 13:02 ModeContext.tsx
+
+=== HOOKS FOLDER ===
+total 12
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 4005 Sep  2 13:02 use-toast.ts
+-rw-r--r-- 1 Hendri 197121 1919 Sep  2 13:02 useMobileVerification.ts
+
+=== LIB FOLDER ===
+total 5
+drwxr-xr-x 1 Hendri 197121   0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121   0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 169 Sep  2 13:02 utils.ts
+
+=== SERVICES FOLDER ===
+total 16
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 8545 Sep  2 13:02 absk.ts
+
+Hendri@EC2AMAZ-6RIGOA4 MINGW64 /c/Hendri Works/absk
+$ # Lihat isi app folder
+ls -la app/
+
+# Lihat isi components folder
+ls -la components/
+
+# Lihat isi contexts folder
+ls -la contexts/
+
+# Lihat isi hooks folder
+ls -la hooks/
+
+# Lihat isi lib folder
+ls -la lib/
+
+# Lihat isi services folder
+ls -la services/
+total 17
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 auth/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 chat/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 dashboard/
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ekyc/
+-rw-r--r-- 1 Hendri 197121 1818 Sep  2 13:02 globals.css
+-rw-r--r-- 1 Hendri 197121 1112 Sep  2 13:02 layout.tsx
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 manual/
+-rw-r--r-- 1 Hendri 197121  500 Sep  2 13:02 page.tsx
+total 36
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:27 ../
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 auth/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 chat/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ekyc/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 landing/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 layout/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 manual/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 mode/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 providers/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 ui/
+drwxr-xr-x 1 Hendri 197121 0 Sep  2 13:02 wallet/
+total 12
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 3192 Sep  2 13:02 AuthContext.tsx
+-rw-r--r-- 1 Hendri 197121  886 Sep  2 13:02 ModeContext.tsx
+total 12
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 4005 Sep  2 13:02 use-toast.ts
+-rw-r--r-- 1 Hendri 197121 1919 Sep  2 13:02 useMobileVerification.ts
+total 5
+drwxr-xr-x 1 Hendri 197121   0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121   0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 169 Sep  2 13:02 utils.ts
+total 16
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:02 ./
+drwxr-xr-x 1 Hendri 197121    0 Sep  2 13:27 ../
+-rw-r--r-- 1 Hendri 197121 8545 Sep  2 13:02 absk.ts
+
+Hendri@EC2AMAZ-6RIGOA4 MINGW64 /c/Hendri Works/absk
+
+

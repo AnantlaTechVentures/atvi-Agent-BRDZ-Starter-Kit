@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ABSK Favicon Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .favicon-preview { display: flex; gap: 20px; align-items: center; margin: 20px 0; }
+        .favicon-preview img { border: 1px solid #ccc; }
+        .instructions { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>ABSK Logo & Favicon</h1>
+    
+    <div class="favicon-preview">
+        <div>
+            <h3>Logo Only (Favicon)</h3>
+            <img src="/images/logo-only.png" alt="Logo Only" width="32" height="32">
+            <p>32x32 - Use this for favicon</p>
+        </div>
+        <div>
+            <h3>Logo Blue (Light Mode)</h3>
+            <img src="/images/logo-blue.png" alt="Logo Blue" width="64" height="64">
+            <p>64x64 - Light theme logo</p>
+        </div>
+        <div>
+            <h3>Logo White (Dark Mode)</h3>
+            <img src="/images/logo-white.png" alt="Logo White" width="64" height="64">
+            <p>64x64 - Dark theme logo</p>
+        </div>
+    </div>
+    
+    <div class="instructions">
+        <h3>Favicon Setup Instructions:</h3>
+        <ol>
+            <li>The logo-only.png is already set as favicon.png</li>
+            <li>For better browser support, you can convert logo-only.png to favicon.ico</li>
+            <li>Use online tools like favicon.io or realfavicongenerator.net</li>
+            <li>Upload logo-only.png and download the generated favicon.ico</li>
+            <li>Replace the current favicon.png with the generated favicon.ico</li>
+        </ol>
+    </div>
+    
+    <div class="instructions">
+        <h3>Current Implementation:</h3>
+        <ul>
+            <li>✅ Logo component automatically switches between light/dark themes</li>
+            <li>✅ Favicon.png set in app/layout.tsx metadata</li>
+            <li>✅ All layouts updated to use new Logo component</li>
+            <li>✅ Responsive sizing (sm, md, lg, xl)</li>
+            <li>✅ Optional text display</li>
+        </ul>
+    </div>
+</body>
+</html>

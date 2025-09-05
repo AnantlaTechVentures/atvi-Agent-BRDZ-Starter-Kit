@@ -1,0 +1,1522 @@
+//Path: components/wallet/WalletDashboard.tsx
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth, useRequireAuth } from '@/contexts/AuthContext';
+import { useMode } from '@/contexts/ModeContext';
+import { useSDK } from '@/hooks/useSDK';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import BalanceCard from '@/components/wallet/BalanceCard';
+import ChainCard from '@/components/wallet/ChainCard';
+import ChatInterface from '@/components/chat/ChatInterface';
+import ManualInterface from '@/components/manual/ManualInterface';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { RefreshCw, Plus, Wallet, AlertCircle, MoreVertical, ChevronDown, TrendingUp, MessageCircle, BarChart3, Clock } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { CreateWalletModal } from '@/components/manual/CreateWalletModal';
+
+interface ChainData {
+  chain: string;
+  address: string;
+  balance: string;
+  native_balance: string;
+  usd_value?: number;
+  native_usd_value?: number;
+}
+
+interface WalletData {
+  id: number;
+  bw_id: number; // Add bw_id for compatibility
+  name: string;
+  wallet_name: string; // Add wallet_name for compatibility
+  user_id: number;
+  created_at: string;
+  chains: ChainData[];
+  total_value_usd: number;
+}
+
+export default function WalletDashboard() {
+  // Use authentication protection - will redirect to login if not authenticated
+  const { isAuthenticated: authIsAuthenticated, isLoading: authIsLoading } = useRequireAuth();
+  
+  const { user } = useAuth();
+  const { mode } = useMode();
+  const { sdk, isReady, isAuthenticated, canMakeRequests, error, refreshToken } = useSDK();
+  
+  const [wallets, setWallets] = useState<WalletData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  
+  // Smart caching for real-time balances
+  const [balanceCache, setBalanceCache] = useState<Map<number, { data: any, timestamp: number }>>(new Map());
+  const CACHE_DURATION = 30000; // 30 seconds cache
+  
+  // Real-time monitoring for incoming funds
+  const [lastKnownBalances, setLastKnownBalances] = useState<Map<number, number>>(new Map());
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  
+  // Rate limiting and request management
+  const [requestQueue, setRequestQueue] = useState<Array<{ id: string, walletId: number, priority: number, timestamp: number }>>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  const [lastRequestTime, setLastRequestTime] = useState(0);
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
+  const [circuitBreakerOpen, setCircuitBreakerOpen] = useState(false);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  
+  // Rate limiting constants - increased to prevent 429 errors
+  const MIN_REQUEST_INTERVAL = 3000; // 3 seconds between requests
+  const MAX_CONCURRENT_REQUESTS = 1; // Maximum 1 concurrent request
+  const MAX_CONSECUTIVE_ERRORS = 2; // Circuit breaker opens after 2 consecutive errors
+  const CIRCUIT_BREAKER_TIMEOUT = 120000; // 2 minute timeout
+  const BACKOFF_MULTIPLIER = 3; // Exponential backoff multiplier
+
+  // Check if cached data is still valid
+  const isCacheValid = (walletId: number): boolean => {
+    const cached = balanceCache.get(walletId);
+    if (!cached) return false;
+    return Date.now() - cached.timestamp < CACHE_DURATION;
+  };
+
+  // Robust balance calculation function (same logic as Wallet page)
+  const calculateWalletTotalValue = async (wallet: any): Promise<number> => {
+    if (!sdk || !isReady) {
+      console.log('❌ SDK not ready for balance calculation');
+      return 0;
+    }
+
+    try {
+      console.log(`🔍 Calculating balance for wallet: ${wallet.wallet_name} (bw_id: ${wallet.bw_id})`);
+      
+      let totalValue = 0;
+      
+      // Try getTotal API (same as Wallet page)
+      try {
+        console.log(`📡 Trying getTotal API for wallet ${wallet.bw_id}...`);
+        const balanceResponse = await sdk.cryptoWallet.balance.getTotal(wallet.bw_id);
+        console.log(`📊 Balance API response:`, balanceResponse);
+        
+        if (balanceResponse?.success && balanceResponse?.data?.chains) {
+          console.log(`🔗 Found chains in balance response:`, balanceResponse.data.chains);
+          
+          // Loop through each chain in balance response
+          Object.values(balanceResponse.data.chains).forEach((chainBalance: any) => {
+            console.log(`💰 Processing chain balance:`, chainBalance);
+            
+            // Add native token value
+            if (chainBalance.native_balance && parseFloat(chainBalance.native_balance.balance || '0') > 0) {
+              const nativeValue = chainBalance.native_balance.value_usd || 0;
+              console.log(`💎 Native balance: ${nativeValue}`);
+              totalValue += nativeValue;
+            }
+            
+            // Add token values (USDC, etc.)
+            if (chainBalance.tokens && Array.isArray(chainBalance.tokens)) {
+              console.log(`🪙 Found ${chainBalance.tokens.length} tokens`);
+              
+              chainBalance.tokens.forEach((token: any) => {
+                if (token.balance && parseFloat(token.balance) > 0) {
+                  let tokenValue = 0;
+                  
+                  // For USDC, use balance as USD value if no value_usd
+                  if (token.symbol === 'USDC') {
+                    tokenValue = token.value_usd || parseFloat(token.balance);
+                    console.log(`💵 USDC token: ${token.balance} = ${tokenValue}`);
+                  } else {
+                    tokenValue = token.value_usd || 0;
+                    console.log(`🔸 ${token.symbol} token: ${tokenValue}`);
+                  }
+                  
+                  totalValue += tokenValue;
+                }
+              });
+            }
+          });
+          
+          console.log(`💰 Final calculated value for ${wallet.wallet_name}: ${totalValue}`);
+          return totalValue;
+        } else {
+          console.log(`⚠️ Balance API response invalid:`, balanceResponse);
+        }
+      } catch (balanceError) {
+        console.error(`⚠️ Balance API failed:`, balanceError);
+      }
+      
+      // Fallback: Use backend value if available
+      if (totalValue === 0 && wallet.total_value_usd) {
+        console.log(`🔄 Using backend value: ${wallet.total_value_usd}`);
+        totalValue = wallet.total_value_usd;
+      }
+      
+      console.log(`💰 Final total value for ${wallet.wallet_name}: ${totalValue}`);
+      return totalValue;
+      
+    } catch (error) {
+      console.error(`❌ Error calculating balance for ${wallet.wallet_name}:`, error);
+      return wallet.total_value_usd || 0;
+    }
+  };
+  
+  // Intelligent rate limiting and request management
+  const canMakeRequest = (): boolean => {
+    if (circuitBreakerOpen) {
+      console.log('🚫 Circuit breaker is open, requests blocked');
+      return false;
+    }
+    
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      console.log(`⏱️ Rate limit: waiting ${MIN_REQUEST_INTERVAL - timeSinceLastRequest}ms before next request`);
+      return false;
+    }
+    
+    return true;
+  };
+  
+  const addToRequestQueue = (walletId: number, priority: number = 1): string => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newRequest = {
+      id: requestId,
+      walletId,
+      priority,
+      timestamp: Date.now()
+    };
+    
+    setRequestQueue(prev => {
+      const updated = [...prev, newRequest];
+      // Sort by priority (higher priority first) then by timestamp
+      return updated.sort((a, b) => b.priority - a.priority || a.timestamp - b.timestamp);
+    });
+    
+    console.log(`📋 Added request ${requestId} for wallet ${walletId} to queue (priority: ${priority})`);
+    return requestId;
+  };
+  
+  const processRequestQueue = async () => {
+    if (isProcessingQueue || requestQueue.length === 0) return;
+    
+    setIsProcessingQueue(true);
+    console.log(`🔄 Processing request queue (${requestQueue.length} requests pending)`);
+    
+    while (requestQueue.length > 0) {
+      const request = requestQueue[0];
+      
+      if (!canMakeRequest()) {
+        // Wait before processing next request
+        await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL));
+        continue;
+      }
+      
+      try {
+        // Remove request from queue
+        setRequestQueue(prev => prev.filter(r => r.id !== request.id));
+        
+        // Process the request
+        await processSingleWalletRequest(request.walletId);
+        
+        // Update last request time
+        setLastRequestTime(Date.now());
+        
+        // Reset consecutive errors and rate limiting on success
+        setConsecutiveErrors(0);
+        setIsRateLimited(false);
+        
+        // Longer delay between requests to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+      } catch (error) {
+        console.error(`❌ Error processing request for wallet ${request.walletId}:`, error);
+        
+        // Handle rate limiting with more comprehensive 429 detection
+        const isRateLimitError = error instanceof Error && (
+          error.message.includes('429') || 
+          error.message.includes('rate limit') || 
+          error.message.includes('Too Many Requests') ||
+          (error as any).status === 429 ||
+          (error as any).response?.status === 429
+        );
+        
+        if (isRateLimitError) {
+          console.warn('⚠️ Rate limit hit (429), implementing exponential backoff...');
+          const backoffTime = Math.min(5000 * Math.pow(BACKOFF_MULTIPLIER, consecutiveErrors), 60000);
+          console.log(`⏳ Waiting ${backoffTime}ms before retry...`);
+          
+          setIsRateLimited(true);
+          setConsecutiveErrors(prev => prev + 1);
+          
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error('🚫 Too many consecutive rate limit errors, opening circuit breaker');
+            setCircuitBreakerOpen(true);
+            setTimeout(() => {
+              console.log('🔄 Circuit breaker timeout, resuming requests');
+              setCircuitBreakerOpen(false);
+              setConsecutiveErrors(0);
+            }, CIRCUIT_BREAKER_TIMEOUT);
+            break; // Exit the queue processing loop
+          }
+          
+          // Wait before processing next request
+          await new Promise(resolve => setTimeout(resolve, backoffTime));
+          
+          // Re-add the request to the front of the queue for retry
+          setRequestQueue(prev => [{ id: request.id, walletId: request.walletId, priority: 10, timestamp: Date.now() }, ...prev]);
+          continue;
+        }
+      }
+    }
+    
+    setIsProcessingQueue(false);
+    console.log('✅ Request queue processing completed');
+  };
+  
+  const processSingleWalletRequest = async (walletId: number): Promise<void> => {
+    if (!sdk || !canMakeRequests) {
+      throw new Error('SDK not ready or requests blocked');
+    }
+    
+    try {
+      console.log(`🔄 Processing single wallet request for ${walletId}`);
+      
+      const balanceResponse = await sdk.cryptoWallet.balance.getTotal(walletId);
+      
+      if (balanceResponse?.success && balanceResponse?.data?.chains) {
+        // Process and cache the response
+        const processedData = processBalanceResponse(balanceResponse, walletId);
+        setBalanceCache(prev => new Map(prev).set(walletId, {
+          data: processedData,
+          timestamp: Date.now()
+        }));
+        
+        console.log(`✅ Successfully processed wallet ${walletId}`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error processing wallet ${walletId}:`, error);
+      throw error;
+    }
+  };
+  
+  const processBalanceResponse = (response: any, walletId: number): any => {
+    // Extract and process balance data
+    const chains = response.data?.chains || response.chains || {};
+    let totalValueUsd = 0;
+    
+    Object.values(chains).forEach((chainData: any) => {
+      if (chainData.native_balance) {
+        totalValueUsd += chainData.native_balance.value_usd || 0;
+      }
+      
+      if (chainData.tokens && Array.isArray(chainData.tokens)) {
+        chainData.tokens.forEach((token: any) => {
+          totalValueUsd += token.value_usd || 0;
+        });
+      }
+    });
+    
+    return {
+      chains,
+      totalValueUsd,
+      processedAt: Date.now()
+    };
+  };
+
+  // Detect balance changes and trigger instant updates
+  const detectBalanceChanges = (walletId: number, newBalance: number): boolean => {
+    const lastBalance = lastKnownBalances.get(walletId) || 0;
+    const hasChanged = Math.abs(newBalance - lastBalance) > 0.01; // Detect changes > $0.01
+    
+    if (hasChanged) {
+      console.log(`💰 Balance change detected for wallet ${walletId}: $${lastBalance.toFixed(2)} → $${newBalance.toFixed(2)}`);
+      // Update last known balance
+      setLastKnownBalances(prev => new Map(prev).set(walletId, newBalance));
+    }
+    
+    return hasChanged;
+  };
+
+  // Start real-time monitoring for incoming funds
+  const startRealTimeMonitoring = () => {
+    if (isMonitoring) return;
+    
+    setIsMonitoring(true);
+    console.log('🔍 Starting real-time monitoring for incoming funds...');
+    
+    // Monitor every 60 seconds (increased to avoid rate limiting)
+    const monitoringInterval = setInterval(async () => {
+      if (!sdk || !canMakeRequests || isRefreshing || circuitBreakerOpen) return;
+      
+      try {
+        // Only check one wallet per monitoring cycle to avoid rate limits
+        const walletIndex = Math.floor(Date.now() / 60000) % wallets.length;
+        const walletToCheck = wallets[walletIndex];
+        if (!walletToCheck) return;
+        
+        console.log(`🔍 Monitoring wallet: ${walletToCheck.name} (cycle ${walletIndex})`);
+        
+        // Use the rate-limited request system
+        if (canMakeRequest()) {
+          const balanceResponse = await sdk.cryptoWallet.balance.getTotal(walletToCheck.bw_id);
+          
+          if (balanceResponse?.success && balanceResponse?.data?.chains) {
+            let totalValue = 0;
+            
+            // Calculate total value from all chains
+            Object.values(balanceResponse.data.chains).forEach((chainBalance: any) => {
+              if (chainBalance.native_balance && parseFloat(chainBalance.native_balance.balance || '0') > 0) {
+                totalValue += chainBalance.native_balance.value_usd || 0;
+              }
+              
+              if (chainBalance.tokens && Array.isArray(chainBalance.tokens)) {
+                chainBalance.tokens.forEach((token: any) => {
+                  if (token.balance && parseFloat(token.balance) > 0) {
+                    totalValue += token.value_usd || parseFloat(token.balance) || 0;
+                  }
+                });
+              }
+            });
+            
+            // Check if balance changed (incoming funds detected)
+            if (detectBalanceChanges(walletToCheck.bw_id, totalValue)) {
+              console.log(`🚨 INCOMING FUNDS DETECTED for wallet ${walletToCheck.name}! Updating dashboard immediately...`);
+              // Trigger immediate full refresh to update all UI elements
+              refreshBalances();
+            }
+          }
+          
+          // Update last request time
+          setLastRequestTime(Date.now());
+        } else {
+          console.log('⏱️ Rate limit active, skipping monitoring cycle');
+        }
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('429')) {
+          console.warn('⚠️ Rate limit hit during monitoring, implementing backoff...');
+          setConsecutiveErrors(prev => prev + 1);
+          
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error('🚫 Too many consecutive errors, opening circuit breaker');
+            setCircuitBreakerOpen(true);
+            setTimeout(() => {
+              console.log('🔄 Circuit breaker timeout, resuming monitoring');
+              setCircuitBreakerOpen(false);
+              setConsecutiveErrors(0);
+            }, CIRCUIT_BREAKER_TIMEOUT);
+          }
+        } else {
+          console.error('⚠️ Real-time monitoring error:', error);
+        }
+      }
+    }, 60000); // Check every 60 seconds (increased frequency)
+    
+    // Store interval ID for cleanup
+    (window as any).monitoringInterval = monitoringInterval;
+  };
+
+  // Stop real-time monitoring
+  const stopRealTimeMonitoring = () => {
+    if ((window as any).monitoringInterval) {
+      clearInterval((window as any).monitoringInterval);
+      (window as any).monitoringInterval = null;
+    }
+    setIsMonitoring(false);
+    console.log('🛑 Real-time monitoring stopped');
+  };
+
+  // Debug modal state changes
+  useEffect(() => {
+    console.log('Modal state changed to:', isCreateModalOpen);
+  }, [isCreateModalOpen]);
+
+  // Add session validation on page refresh/visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('🔍 Page became visible, validating session...');
+        validateSession();
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'auth_token' || e.key === 'user_data') {
+        console.log('🔍 Auth data changed, validating session...');
+        validateSession();
+      }
+    };
+
+    // Listen for page visibility changes (refresh, tab switch, etc.)
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Listen for localStorage changes (from other tabs)
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isReady && user) {
+      // Load wallets when SDK is ready and user is available
+      console.log('🚀 SDK ready and user available, loading wallets...');
+      loadWallets();
+    }
+  }, [isReady, user]);
+
+  // Auto-refresh balances when wallets are loaded - IMMEDIATE refresh for fast loading
+  useEffect(() => {
+    if (wallets.length > 0 && sdk && canMakeRequests && !isRefreshing) {
+      console.log('🚀 Dashboard loaded - immediately fetching real-time balances for fast display...');
+      // Immediate refresh for fast loading, no delay
+      refreshBalances();
+      
+      // Start real-time monitoring for incoming funds
+      startRealTimeMonitoring();
+      
+      // Set up background refresh every 30 seconds to keep data fresh
+      const backgroundRefreshInterval = setInterval(() => {
+        if (sdk && canMakeRequests && !isRefreshing) {
+          console.log('🔄 Background refresh - keeping data fresh...');
+          refreshBalances();
+        }
+      }, 30000); // 30 seconds
+      
+      return () => {
+        clearInterval(backgroundRefreshInterval);
+        stopRealTimeMonitoring();
+      };
+    }
+  }, [wallets.length, sdk, canMakeRequests]);
+
+  const validateSession = async () => {
+    try {
+      // Check if token exists and is valid
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.log('🔐 No auth token found, redirecting to login');
+        window.location.href = '/auth/login';
+        return;
+      }
+
+      // Check if user data exists
+      const userData = localStorage.getItem('user_data');
+      if (!userData) {
+        console.log('🔐 No user data found, redirecting to login');
+        window.location.href = '/auth/login';
+        return;
+      }
+
+      // Check if token is expired (basic check - you can add JWT expiration validation)
+      const tokenAge = Date.now() - (localStorage.getItem('token_timestamp') ? parseInt(localStorage.getItem('token_timestamp')!) : 0);
+      const maxTokenAge = 24 * 60 * 60 * 1000; // 24 hours
+      
+      if (tokenAge > maxTokenAge) {
+        console.log('🔐 Token expired, redirecting to login');
+        localStorage.clear(); // Clear all data
+        window.location.href = '/auth/login';
+        return;
+      }
+
+      console.log('✅ Session validated, refreshing SDK token...');
+      
+      // Refresh SDK token to ensure API calls work
+      if (refreshToken()) {
+        console.log('✅ SDK token refreshed, loading wallets');
+        loadWallets();
+      } else {
+        console.log('❌ Failed to refresh SDK token, redirecting to login');
+        localStorage.clear();
+        window.location.href = '/auth/login';
+      }
+    } catch (error) {
+      console.error('❌ Session validation failed:', error);
+      localStorage.clear();
+      window.location.href = '/auth/login';
+    }
+  };
+
+  const loadWallets = async () => {
+    if (!sdk || !isReady) {
+      setLoadError('SDK is still initializing, please wait...');
+      setIsLoading(false);
+      return;
+    }
+    
+    if (!user?.user_id) {
+      setLoadError('User not authenticated, please log in again');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setLoadError(null);
+      
+      console.log('🔍 Loading wallets for user:', user.user_id);
+      
+      // Convert user_id to number if it's a string
+      const userId = typeof user.user_id === 'string' ? parseInt(user.user_id) : user.user_id;
+      
+      // Menggunakan BRDZ SDK cryptoWallet module
+      const response = await sdk.cryptoWallet.getUserWallets(userId);
+      
+      console.log('📥 Raw wallet response:', response);
+      console.log('📊 Response.data type:', typeof response.data);
+      console.log('📊 Is response.data array?:', Array.isArray(response.data));
+      console.log('📊 Response.data content:', response.data);
+      
+      if (response.success && response.data) {
+        // Handle different response structures
+        let walletsArray = [];
+        
+        if (Array.isArray(response.data)) {
+          walletsArray = response.data;
+        } else if (response.data.wallets && Array.isArray(response.data.wallets)) {
+          walletsArray = response.data.wallets;
+        } else if (response.data.crypto_wallets && Array.isArray(response.data.crypto_wallets)) {
+          walletsArray = response.data.crypto_wallets;
+        } else if (typeof response.data === 'object' && response.data !== null) {
+          // Single wallet object, wrap in array
+          walletsArray = [response.data];
+        } else {
+          console.warn('⚠️ Unexpected response.data structure, treating as empty array');
+          walletsArray = [];
+        }
+        
+        console.log('📋 Processed wallets array:', walletsArray);
+        
+        if (walletsArray.length === 0) {
+          console.log('ℹ️ No crypto wallets found for user');
+          setWallets([]);
+          return;
+        }
+        
+        // The API is returning proper wallet objects, not tokens
+        console.log('✅ Detected proper wallet structure from API');
+        
+        // Create a persistent cache for wallet data to improve performance
+        const walletCache = new Map();
+        
+        // Load cached data from localStorage (non-sensitive data only)
+        try {
+          const cachedWallets = localStorage.getItem(`wallet_cache_${user.user_id}`);
+          if (cachedWallets) {
+            const parsed = JSON.parse(cachedWallets);
+            const now = Date.now();
+            // Cache expires after 5 minutes
+            if (now - parsed.timestamp < 5 * 60 * 1000) {
+              console.log('📦 Loading cached wallet data from localStorage');
+              parsed.wallets.forEach((cachedWallet: any) => {
+                walletCache.set(`wallet_${cachedWallet.bw_id}`, cachedWallet);
+              });
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Failed to load cached wallet data:', error);
+        }
+        
+        // Process each wallet to get its balance and chain information
+        const walletsWithBalances = await Promise.all(
+          walletsArray.map(async (wallet: any) => {
+            console.log('🔍 Processing wallet:', wallet.wallet_name, 'ID:', wallet.bw_id);
+            
+            // Check cache first
+            const cacheKey = `wallet_${wallet.bw_id}`;
+            const cachedData = walletCache.get(cacheKey);
+            
+            if (cachedData) {
+              console.log(`📦 Using cached data for wallet ${wallet.bw_id}`);
+              return cachedData;
+            }
+            
+            try {
+              // Use the robust balance calculation function (same as Wallet page)
+              console.log(`🔄 Calculating balance for wallet ${wallet.bw_id}...`);
+              const totalValueUsd = await calculateWalletTotalValue(wallet);
+              
+              const chains: ChainData[] = [];
+              
+              if (balanceResponse.success || balanceResponse.data) {
+                const responseData = balanceResponse.data || balanceResponse;
+                console.log(`✅ Processing balance data for wallet ${wallet.bw_id}:`, JSON.stringify(responseData, null, 2));
+                
+                // Handle multiple possible response formats
+                let chainsData = null;
+                
+                // Format 1: Direct chains object
+                if (responseData.chains) {
+                  chainsData = responseData.chains;
+                }
+                // Format 2: Nested in data.chains
+                else if (responseData.data?.chains) {
+                  chainsData = responseData.data.chains;
+                }
+                // Format 3: Direct response is chains object
+                else if (typeof responseData === 'object' && responseData !== null) {
+                  chainsData = responseData;
+                }
+                
+                if (chainsData) {
+                  console.log(`🔗 Processing chains data:`, JSON.stringify(chainsData, null, 2));
+                  
+                  // Handle chains as object or array
+                  const chainsToProcess = Array.isArray(chainsData) ? chainsData : Object.entries(chainsData);
+                  
+                  chainsToProcess.forEach(([chainId, chainData]: [string, any], index: number) => {
+                    console.log(`🔗 Processing chain ${chainId}:`, JSON.stringify(chainData, null, 2));
+                    
+                    // Extract balance values with comprehensive fallback methods
+                    const usdcBalance = parseFloat(
+                      chainData.usdc_balance || 
+                      chainData.balance || 
+                      chainData.usdc?.balance || 
+                      chainData.tokens?.usdc?.balance || 
+                      '0'
+                    );
+                    
+                    const nativeBalance = parseFloat(
+                      chainData.native_balance || 
+                      chainData.native?.balance || 
+                      chainData.eth_balance || 
+                      chainData.btc_balance || 
+                      chainData.sol_balance || 
+                      '0'
+                    );
+                    
+                    // Extract USD values with comprehensive fallbacks
+                    const usdcValueUsd = parseFloat(
+                      chainData.usdc_value_usd || 
+                      chainData.usdc?.value_usd || 
+                      chainData.usdc?.usd_value || 
+                      chainData.tokens?.usdc?.value_usd || 
+                      (usdcBalance > 0 ? usdcBalance : 0).toString() // USDC ≈ $1
+                    );
+                    
+                    const nativeValueUsd = parseFloat(
+                      chainData.native_value_usd || 
+                      chainData.native_usd_value || 
+                      chainData.native?.value_usd || 
+                      chainData.native?.usd_value || 
+                      chainData.eth_value_usd || 
+                      chainData.btc_value_usd || 
+                      chainData.sol_value_usd || 
+                      '0'
+                    );
+                    
+                    // Get address with fallbacks
+                    const address = chainData.address || 
+                                  chainData.wallet_address || 
+                                  chainData.public_key || 
+                                  `Generated_${wallet.bw_id}_${chainId}`;
+                    
+                    const chain: ChainData = {
+                      chain: chainId,
+                      address: address,
+                      balance: usdcBalance.toString(),
+                      native_balance: nativeBalance.toString(),
+                      usd_value: usdcValueUsd,
+                      native_usd_value: nativeValueUsd
+                    };
+                    
+                    chains.push(chain);
+                    totalValueUsd += usdcValueUsd + nativeValueUsd;
+                    
+                    console.log(`💰 Chain ${chainId}: USDC=$${usdcValueUsd}, Native=$${nativeValueUsd}, Total=$${usdcValueUsd + nativeValueUsd}`);
+                  });
+                } else {
+                  console.log(`⚠️ No chains data found in response for wallet ${wallet.bw_id}`);
+                  
+                  // Try to extract any balance information from the response
+                  if (responseData && typeof responseData === 'object') {
+                    console.log(`🔍 Attempting to extract balance from response structure:`, Object.keys(responseData));
+                    
+                    // Look for any balance-related fields in the response
+                    const possibleBalanceFields = ['balance', 'total_balance', 'usd_value', 'total_value', 'amount'];
+                    const possibleChainFields = ['chain', 'chains', 'networks', 'blockchains'];
+                    
+                    // Check if there are any direct balance fields
+                    for (const field of possibleBalanceFields) {
+                      if (responseData[field] !== undefined) {
+                        console.log(`💰 Found balance field '${field}':`, responseData[field]);
+                        
+                        const balanceValue = parseFloat(responseData[field] || '0');
+                        if (balanceValue > 0) {
+                          const chain: ChainData = {
+                            chain: 'General Balance',
+                            address: `Wallet_${wallet.bw_id}`,
+                            balance: balanceValue.toString(),
+                            native_balance: '0',
+                            usd_value: balanceValue,
+                            native_usd_value: 0
+                          };
+                          chains.push(chain);
+                          totalValueUsd += balanceValue;
+                          console.log(`✅ Added balance from field '${field}': $${balanceValue}`);
+                        }
+                      }
+                    }
+                    
+                    // Check if there are any chain-related fields
+                    for (const field of possibleChainFields) {
+                      if (responseData[field] !== undefined) {
+                        console.log(`🔗 Found chain field '${field}':`, responseData[field]);
+                        // Try to process this as chain data
+                        if (typeof responseData[field] === 'object') {
+                          const chainData = responseData[field];
+                          if (Array.isArray(chainData)) {
+                            chainData.forEach((item, index) => {
+                              if (item && typeof item === 'object') {
+                                const balance = parseFloat(item.balance || item.amount || item.value || '0');
+                                if (balance > 0) {
+                                  const chain: ChainData = {
+                                    chain: item.chain || item.network || `Chain_${index}`,
+                                    address: item.address || `Address_${index}`,
+                                    balance: balance.toString(),
+                                    native_balance: '0',
+                                    usd_value: balance,
+                                    native_usd_value: 0
+                                  };
+                                  chains.push(chain);
+                                  totalValueUsd += balance;
+                                  console.log(`✅ Added chain balance: ${chain.chain} = $${balance}`);
+                                }
+                              }
+                            });
+                          } else if (typeof chainData === 'object') {
+                            Object.entries(chainData).forEach(([key, value]: [string, any]) => {
+                              if (value && typeof value === 'object') {
+                                const balance = parseFloat(value.balance || value.amount || value.value || '0');
+                                if (balance > 0) {
+                                  const chain: ChainData = {
+                                    chain: key,
+                                    address: value.address || `Address_${key}`,
+                                    balance: balance.toString(),
+                                    native_balance: '0',
+                                    usd_value: balance,
+                                    native_usd_value: 0
+                                  };
+                                  chains.push(chain);
+                                  totalValueUsd += balance;
+                                  console.log(`✅ Added chain balance: ${key} = $${balance}`);
+                                }
+                              }
+                            });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                console.log(`✅ Created ${chains.length} chains for wallet ${wallet.bw_id}, total value: $${totalValueUsd}`);
+              } else {
+                // If balance API response structure is unexpected, log and create default structure
+                console.log(`⚠️ Balance API response structure unexpected for wallet ${wallet.bw_id}:`, balanceResponse);
+                console.log(`⚠️ Response success: ${balanceResponse.success}, has data: ${!!balanceResponse.data}`);
+                
+                // Create default chains based on common blockchain types
+                const defaultChains = [
+                  { name: 'EVM', icon: '🔷' },
+                  { name: 'Bitcoin Testnet', icon: '🟠' },
+                  { name: 'Solana Devnet', icon: '🟣' },
+                  { name: 'TRON Shasta Testnet', icon: '🔵' }
+                ];
+                
+                // Create empty chains with zero balances when API doesn't return data
+                defaultChains.forEach((chainInfo, index) => {
+                  const chain: ChainData = {
+                    chain: chainInfo.name,
+                    address: `Generated_${wallet.bw_id}_${index}`,
+                    balance: '0.000000',
+                    native_balance: '0.000000',
+                    usd_value: 0,
+                    native_usd_value: 0
+                  };
+                  chains.push(chain);
+                });
+                
+                console.log(`⚠️ No balance data from API for wallet ${wallet.bw_id}, showing zero balances`);
+              }
+              
+              const walletData = {
+                id: wallet.bw_id,
+                bw_id: wallet.bw_id,
+                name: wallet.wallet_name || 'Unnamed Wallet',
+                wallet_name: wallet.wallet_name || 'Unnamed Wallet',
+                user_id: wallet.user_id,
+                created_at: wallet.created_at || new Date().toISOString(),
+                chains,
+                total_value_usd: totalValueUsd
+              };
+              
+              // Cache the wallet data for future use
+              walletCache.set(cacheKey, walletData);
+              
+              return walletData;
+            } catch (error) {
+              console.error(`Failed to load balance for wallet ${wallet.bw_id}:`, error);
+              
+              // Create a fallback wallet with default structure
+              const fallbackChains = [
+                { name: 'EVM', icon: '🔷' },
+                { name: 'Bitcoin Testnet', icon: '🟠' },
+                { name: 'Solana Devnet', icon: '🟣' },
+                { name: 'TRON Shasta Testnet', icon: '🔵' }
+              ];
+              
+              const chains: ChainData[] = fallbackChains.map((chainInfo, index) => ({
+                chain: chainInfo.name,
+                address: `Fallback_${wallet.bw_id}_${index}`,
+                balance: '0.000000',
+                native_balance: '0.000000',
+                usd_value: 0,
+                native_usd_value: 0
+              }));
+              
+              const fallbackWallet = {
+                id: wallet.bw_id,
+                bw_id: wallet.bw_id,
+                name: wallet.wallet_name || 'Unnamed Wallet',
+                wallet_name: wallet.wallet_name || 'Unnamed Wallet',
+                user_id: wallet.user_id,
+                created_at: wallet.created_at || new Date().toISOString(),
+                chains,
+                total_value_usd: 0
+              };
+              
+              // Cache the fallback data
+              walletCache.set(cacheKey, fallbackWallet);
+              
+              return fallbackWallet;
+            }
+          })
+        );
+        
+        console.log('✅ Wallets with balances loaded:', walletsWithBalances);
+        
+        // Save non-sensitive wallet data to localStorage cache
+        try {
+          const cacheData = {
+            timestamp: Date.now(),
+            wallets: walletsWithBalances.map(wallet => ({
+              id: wallet.id,
+              bw_id: wallet.bw_id,
+              name: wallet.name,
+              wallet_name: wallet.wallet_name,
+              user_id: wallet.user_id,
+              created_at: wallet.created_at,
+              chains: wallet.chains.map((chain: ChainData) => ({
+                chain: chain.chain,
+                address: chain.address,
+                balance: chain.balance,
+                native_balance: chain.native_balance,
+                usd_value: chain.usd_value,
+                native_usd_value: chain.native_usd_value
+              })),
+              total_value_usd: wallet.total_value_usd
+            }))
+          };
+          
+          localStorage.setItem(`wallet_cache_${user.user_id}`, JSON.stringify(cacheData));
+          console.log('💾 Wallet data cached to localStorage for faster loading');
+        } catch (error) {
+          console.log('⚠️ Failed to cache wallet data:', error);
+        }
+        
+        setWallets(walletsWithBalances);
+      } else {
+        throw new Error(response.message || 'Failed to load wallets');
+      }
+    } catch (error: any) {
+      console.error('❌ Failed to load wallets:', error);
+      setLoadError(error.message || 'Failed to load wallets');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshBalances = async () => {
+    if (!sdk || !canMakeRequests || isRefreshing) return;
+    
+    setIsRefreshing(true);
+    setLoadError(null);
+    
+    try {
+      console.log('🔄 Starting balance refresh with intelligent rate limiting...');
+      
+      // Clear cache to force fresh data
+      setBalanceCache(new Map());
+      
+      // Add all wallets to the request queue with high priority
+      wallets.forEach((wallet, index) => {
+        const priority = index === 0 ? 10 : 5; // First wallet gets highest priority
+        addToRequestQueue(wallet.bw_id, priority);
+      });
+      
+      // Start processing the queue
+      await processRequestQueue();
+      
+      console.log('✅ Balance refresh completed via request queue');
+      
+    } catch (error: any) {
+      console.error('❌ Error during balance refresh:', error);
+      setLoadError(error.message || 'Failed to refresh balances');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+
+  const handleRefreshWallet = async (walletId: number) => {
+    try {
+      console.log(`🔄 Manually refreshing wallet ${walletId}...`);
+      
+      const wallet = wallets.find(w => w.id === walletId);
+      if (!wallet) {
+        console.error(`Wallet ${walletId} not found`);
+        return;
+      }
+      
+      // Force refresh this specific wallet
+      const balanceResponse = await sdk.cryptoWallet.balance.getTotal(walletId);
+      console.log(`📥 Manual refresh response for wallet ${walletId}:`, balanceResponse);
+      
+      if (balanceResponse.success && balanceResponse.data) {
+        // Update the wallet with fresh data
+        const updatedChains: ChainData[] = [];
+        let totalValueUsd = 0;
+        
+        for (const [chainId, chainData] of Object.entries(balanceResponse.data)) {
+          const chain: ChainData = {
+            chain: chainId,
+            address: (chainData as any).address || 'N/A',
+            balance: (chainData as any).usdc_balance || '0',
+            native_balance: (chainData as any).native_balance || '0',
+            usd_value: (chainData as any).usdc_value_usd || 0,
+            native_usd_value: (chainData as any).native_value_usd || 0
+          };
+          
+          updatedChains.push(chain);
+          totalValueUsd += (chain.usd_value || 0) + (chain.native_usd_value || 0);
+        }
+        
+        setWallets(prevWallets => 
+          prevWallets.map(w => 
+            w.id === walletId 
+              ? { ...w, chains: updatedChains, total_value_usd: totalValueUsd }
+              : w
+          )
+        );
+        
+        console.log(`✅ Wallet ${walletId} refreshed successfully with ${updatedChains.length} chains`);
+      }
+    } catch (error) {
+      console.error(`Failed to manually refresh wallet ${walletId}:`, error);
+    }
+  };
+
+  const handleRefreshChain = async (walletId: number, chainId: string) => {
+    try {
+      console.log(`🔄 Refreshing balance for wallet ${walletId}, chain ${chainId}`);
+      
+      const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, chainId);
+      
+      if (balanceResponse.success) {
+        // Update specific chain balance in state
+        setWallets(prevWallets => 
+          prevWallets.map(wallet => {
+            if (wallet.id === walletId) {
+              const updatedChains = wallet.chains.map(chain => {
+                if (chain.chain === chainId) {
+                  return {
+                    ...chain,
+                    balance: balanceResponse.data.usdc_balance || '0',
+                    native_balance: balanceResponse.data.native_balance || '0',
+                    usd_value: balanceResponse.data.usdc_value_usd || 0,
+                    native_usd_value: balanceResponse.data.native_value_usd || 0
+                  };
+                }
+                return chain;
+              });
+              
+              // Recalculate total value
+              const totalValueUsd = updatedChains.reduce((sum, chain) => 
+                sum + (chain.usd_value || 0) + (chain.native_usd_value || 0), 0
+              );
+              
+              return {
+                ...wallet,
+                chains: updatedChains,
+                total_value_usd: totalValueUsd
+              };
+            }
+            return wallet;
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Failed to refresh chain balance:', error);
+    }
+  };
+
+  const handleCreateWallet = async () => {
+    // Open the create wallet modal
+    console.log('Create new wallet - opening modal');
+    setIsCreateModalOpen(true);
+    console.log('Modal state set to:', true);
+  };
+
+  // Show SDK loading state
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center space-y-4">
+          <LoadingSpinner size="lg" />
+          <p className="text-muted-foreground">Initializing SDK...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show SDK error
+  if (error) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            SDK Error: {error}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Show authentication required
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Please log in to access your wallet dashboard.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center space-y-4">
+          <LoadingSpinner size="lg" />
+          <p className="text-muted-foreground">Loading your wallets...</p>
+          <p className="text-xs text-muted-foreground">Loading wallet balances and chain information...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show load error
+  if (loadError) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {loadError}
+          </AlertDescription>
+        </Alert>
+        <Button 
+          onClick={loadWallets} 
+          variant="outline" 
+          className="mt-4"
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // Show rate limiting message
+  if (isRateLimited) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <Alert>
+          <Clock className="h-4 w-4" />
+          <AlertDescription>
+            <div className="space-y-2">
+              <p className="font-medium">Rate Limit Active</p>
+              <p className="text-sm text-muted-foreground">
+                We're experiencing high API usage. Please wait while we automatically retry your requests with proper delays.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This helps prevent server overload and ensures reliable service for all users.
+              </p>
+            </div>
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  const totalPortfolioValue = wallets.reduce((sum, wallet) => sum + wallet.total_value_usd, 0);
+  const totalWallets = wallets.length;
+  
+  // Calculate total unique blockchains across all wallets
+  const calculateTotalChains = () => {
+    const uniqueChains = new Set<string>();
+    
+    wallets.forEach(wallet => {
+      if (wallet.chains && Array.isArray(wallet.chains)) {
+        wallet.chains.forEach(chain => {
+          // Only count chains that have balances (are actually active)
+          if ((chain.balance && parseFloat(chain.balance) > 0) || 
+              (chain.native_balance && parseFloat(chain.native_balance) > 0)) {
+            uniqueChains.add(chain.chain);
+          }
+        });
+      }
+    });
+    
+    return uniqueChains.size;
+  };
+  
+  const totalChains = calculateTotalChains();
+  
+  // Calculate total unique tokens across all wallets (same logic as wallets page)
+  const calculateTotalTokens = () => {
+    let totalTokens = 0;
+    const uniqueTokens = new Set<string>();
+    
+    wallets.forEach(wallet => {
+      if (wallet.chains && Array.isArray(wallet.chains)) {
+        wallet.chains.forEach(chain => {
+          // Count USDC tokens
+          if (chain.balance && parseFloat(chain.balance) > 0) {
+            uniqueTokens.add(`${wallet.id}-${chain.chain}-USDC`);
+            totalTokens++;
+          }
+          
+          // Count native tokens
+          if (chain.native_balance && parseFloat(chain.native_balance) > 0) {
+            uniqueTokens.add(`${wallet.id}-${chain.chain}-NATIVE`);
+            totalTokens++;
+          }
+        });
+      }
+    });
+    
+    return totalTokens;
+  };
+  
+  const totalTokens = calculateTotalTokens();
+  
+  // Debug summary calculations
+  console.log(`📊 Dashboard Summary: Portfolio=$${totalPortfolioValue.toFixed(2)}, Wallets=${totalWallets}, Chains=${totalChains}, Tokens=${totalTokens}`);
+
+  return (
+    <div className="space-y-8">
+      {/* Header Section */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">Wallet Vault</h1>
+          <p className="text-lg text-gray-600 dark:text-gray-300">Manage your multi-chain cryptocurrency portfolio</p>
+        </div>
+        
+        {/* Header Action Buttons */}
+                  <div className="flex items-center gap-3">
+            {/* Real-time monitoring status indicator */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+              <div className={`w-2 h-2 rounded-full ${isMonitoring ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+              <span className="text-xs text-green-700 dark:text-green-300 font-medium">
+                {isMonitoring ? 'Live Monitoring' : 'Monitoring Off'}
+              </span>
+            </div>
+            
+            {/* Rate Limiting Status */}
+            {circuitBreakerOpen ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span className="text-xs text-red-700 dark:text-red-400 font-medium">Rate Limited</span>
+              </div>
+            ) : consecutiveErrors > 0 ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span className="text-xs text-yellow-700 dark:text-yellow-400 font-medium">High Load</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="text-xs text-blue-700 dark:text-blue-400 font-medium">Normal</span>
+              </div>
+            )}
+            
+            <Button 
+              onClick={() => {
+                // Clear cache for fresh data on manual refresh
+                setBalanceCache(new Map());
+                console.log('🧹 Cache cleared for manual refresh');
+                refreshBalances();
+              }}
+              disabled={isRefreshing || circuitBreakerOpen}
+              variant="outline"
+              size="sm"
+              className="border-gray-300 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-600 dark:hover:border-gray-500 dark:hover:bg-gray-800"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            
+          
+          <Button 
+            onClick={handleCreateWallet}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Wallet
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary Cards - Moved to top for better visibility */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl border border-blue-200 dark:border-blue-700 text-center shadow-sm hover:shadow-md transition-shadow">
+          <div className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-1">${totalPortfolioValue.toFixed(2)}</div>
+          <div className="text-sm text-blue-700 dark:text-blue-300 mb-2">Total Portfolio</div>
+          <div className="text-xs text-green-600 dark:text-green-400 font-medium">+5.2% 24h</div>
+        </div>
+        
+        <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-xl border border-green-200 dark:border-green-700 text-center shadow-sm hover:shadow-md transition-shadow">
+          <div className="text-3xl font-bold text-green-900 dark:text-green-100 mb-1">{totalWallets}</div>
+          <div className="text-sm text-green-700 dark:text-green-300">Wallets</div>
+        </div>
+        
+        <div className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl border border-purple-200 dark:border-purple-700 text-center shadow-sm hover:shadow-md transition-shadow">
+          <div className="text-3xl font-bold text-purple-900 dark:text-purple-100 mb-1">{totalChains}</div>
+          <div className="text-sm text-purple-700 dark:text-purple-300">Blockchains</div>
+        </div>
+        
+        <div className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 rounded-xl border border-orange-200 dark:border-orange-700 text-center shadow-sm hover:shadow-md transition-shadow">
+          <div className="text-3xl font-bold text-orange-900 dark:text-orange-100 mb-1">
+            {totalTokens}
+          </div>
+          <div className="text-sm text-orange-700 dark:text-orange-300">Tokens</div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="flex space-x-8" aria-label="Dashboard tabs">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'overview'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-4 w-4" />
+              <span>Overview</span>
+            </div>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('wallets')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'wallets'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Wallet className="h-4 w-4" />
+              <span>Wallets</span>
+              <Badge variant="secondary" className="ml-1 text-xs">{totalWallets}</Badge>
+            </div>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'chat'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <MessageCircle className="h-4 w-4" />
+              <span>AI Chat</span>
+            </div>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'analytics'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="h-4 w-4" />
+              <span>Analytics</span>
+            </div>
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <div className="space-y-8">
+          {/* Action Buttons Section */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button 
+              onClick={handleCreateWallet}
+              className="bg-blue-600 hover:bg-blue-700 text-white border-0 px-6 py-3 text-base font-medium shadow-sm hover:shadow-md transition-shadow"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Create New Wallet
+            </Button>
+            
+            <Button 
+              onClick={refreshBalances}
+              disabled={isRefreshing}
+              className="bg-green-600 hover:bg-green-700 text-white border-0 px-6 py-3 text-base font-medium shadow-sm hover:shadow-md transition-shadow"
+            >
+              <RefreshCw className={`h-5 w-5 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh Balances
+            </Button>
+            
+            <Button 
+              onClick={() => setActiveTab('chat')}
+              className="bg-purple-600 hover:bg-purple-700 text-white border-0 px-6 py-3 text-base font-medium shadow-sm hover:shadow-md transition-shadow"
+            >
+              <MessageCircle className="h-5 w-5 mr-2" />
+              Ask AI Assistant
+            </Button>
+          </div>
+
+          {/* Portfolio Analytics Section */}
+          <div className="flex justify-center">
+            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center max-w-md bg-gray-50 dark:bg-gray-800/50">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                  <TrendingUp className="h-8 w-8 text-gray-600 dark:text-gray-400" />
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Portfolio Analytics</h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">View detailed analytics and performance metrics</p>
+              
+              <Button 
+                onClick={() => setActiveTab('analytics')}
+                variant="outline"
+                className="border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700 px-6 py-2"
+              >
+                View Analytics
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallets Tab */}
+      {activeTab === 'wallets' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Wallet Management</h3>
+            <Button 
+              onClick={handleCreateWallet}
+              className="gradient-primary text-white border-0 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Wallet
+            </Button>
+          </div>
+          
+          <ManualInterface wallets={wallets} onWalletsUpdate={loadWallets} />
+        </div>
+      )}
+
+      {/* Chat Tab */}
+      {activeTab === 'chat' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">AI Chat Assistant</h3>
+            <Badge variant="secondary" className="bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">Powered by BRDZ AI</Badge>
+          </div>
+          
+          <ChatInterface />
+        </div>
+      )}
+
+      {/* Analytics Tab */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Portfolio Analytics</h3>
+            <Button variant="outline" size="sm" className="border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500">
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Export Data
+            </Button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-900/20 dark:to-indigo-800/20 rounded-xl border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-gray-900 dark:text-white">Portfolio Growth</h4>
+                <TrendingUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">+12.5%</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">Last 30 days</p>
+            </div>
+            
+            <div className="p-6 bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-800/20 rounded-xl border border-green-200 dark:border-green-700 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-gray-900 dark:text-white">Active Wallets</h4>
+                <Wallet className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <p className="text-3xl font-bold text-green-600 dark:text-green-400">{totalWallets}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">Total wallets</p>
+            </div>
+            
+            <div className="p-6 bg-gradient-to-br from-purple-50 to-violet-100 dark:from-purple-900/20 dark:to-violet-800/20 rounded-xl border border-purple-200 dark:border-purple-700 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-gray-900 dark:text-white">Blockchain Coverage</h4>
+                <TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{totalChains}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">Supported chains</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Create Wallet Modal */}
+      <CreateWalletModal 
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onWalletCreated={() => {
+          console.log('New wallet created');
+          setIsCreateModalOpen(false);
+          // Refresh wallets list
+          loadWallets();
+        }}
+      />
+    </div>
+  );
+}
