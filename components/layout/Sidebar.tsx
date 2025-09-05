@@ -11,14 +11,16 @@ import {
   Settings, 
   History, 
   LogOut,
-  Wrench
+  Wrench,
+  HandCoins
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'PAYAi Chat Mode', href: '/chat', icon: MessageCircle },
-          { name: 'Wallets', href: '/manual', icon: Wrench },
-  { name: 'Transaction History', href: '/transactions', icon: History },
+  { name: 'Wallets', href: '/manual', icon: Wrench },
+  { name: 'Transactions', href: '/transactions', icon: HandCoins },
+  { name: 'Transaction History', href: '/history', icon: History },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

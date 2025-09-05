@@ -18,10 +18,6 @@ interface SDKUser {
   isLoggedIn: boolean;
 }
 
-// Singleton pattern to prevent multiple SDK initializations
-let sdkInitialized = false;
-let sdkInitPromise: Promise<void> | null = null;
-
 export const useSDK = () => {
   const [state, setState] = useState<SDKState>({
     sdkReady: false,
@@ -39,26 +35,42 @@ export const useSDK = () => {
     isLoggedIn: false
   });
 
-  // Initialize SDK with singleton pattern
+  // Initialize SDK
   useEffect(() => {
     const initSDK = async () => {
-      // If SDK is already initialized, just return the current state
-      if (sdkInitialized) {
+      try {
+        console.log('🚀 Initializing BRDZ SDK...');
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+        // Validate environment variables
+        const baseUrl = process.env.NEXT_PUBLIC_BRDZ_API_BASE;
+        const apiKey = process.env.NEXT_PUBLIC_BRDZ_API_KEY;
+
+        if (!baseUrl) {
+          throw new Error('NEXT_PUBLIC_BRDZ_API_BASE environment variable is required');
+        }
+        if (!apiKey) {
+          throw new Error('NEXT_PUBLIC_BRDZ_API_KEY environment variable is required');
+        }
+
+        // Configure SDK
+        const config = brdzSDK.config;
+        config.setBaseUrl(baseUrl);
+        config.setApiKey(apiKey);
+
+        console.log('🔧 SDK Base URL:', baseUrl);
+        console.log('🔑 API Key loaded (first 8 chars):', apiKey.substring(0, 8) + '...');
+
+        // Load existing session if available
         const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
         const userId = typeof window !== 'undefined' ? localStorage.getItem('user_id') : null;
         const username = typeof window !== 'undefined' ? localStorage.getItem('username') : null;
         const email = typeof window !== 'undefined' ? localStorage.getItem('email') : null;
-        
-        setState({
-          sdkReady: true,
-          isLoading: false,
-          error: null,
-          hasApiKey: true,
-          hasToken: !!token,
-          baseUrl: process.env.NEXT_PUBLIC_BRDZ_API_BASE || null
-        });
-        
+
         if (token) {
+          config.setToken(token);
+          console.log('🔐 JWT token restored from localStorage');
+          
           setUser({
             user_id: userId,
             username,
@@ -66,111 +78,35 @@ export const useSDK = () => {
             isLoggedIn: true
           });
         }
-        return;
-      }
 
-      // If initialization is in progress, wait for it
-      if (sdkInitPromise) {
-        await sdkInitPromise;
-        return;
-      }
+        // Validate SDK setup
+        const isValid = brdzSDK.utils.validateSDKSetup();
+        
+        setState({
+          sdkReady: true,
+          isLoading: false,
+          error: null,
+          hasApiKey: !!apiKey,
+          hasToken: !!token,
+          baseUrl
+        });
 
-      // Create new initialization promise
-      sdkInitPromise = (async () => {
-        try {
-          console.log('🚀 Initializing BRDZ SDK...');
-          setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-          // Validate environment variables
-          const baseUrl = process.env.NEXT_PUBLIC_BRDZ_API_BASE;
-          const apiKey = process.env.NEXT_PUBLIC_BRDZ_API_KEY;
-
-          if (!baseUrl) {
-            throw new Error('NEXT_PUBLIC_BRDZ_API_BASE environment variable is required');
-          }
-          if (!apiKey) {
-            throw new Error('NEXT_PUBLIC_BRDZ_API_KEY environment variable is required');
-          }
-
-          // Configure SDK
-          const config = brdzSDK.config;
-          config.setBaseUrl(baseUrl);
-          config.setApiKey(apiKey);
-
-          console.log('🔧 SDK Base URL:', baseUrl);
-          console.log('🔑 API Key loaded (first 8 chars):', apiKey.substring(0, 8) + '...');
-
-          // Load existing session if available
-          const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-          const userId = typeof window !== 'undefined' ? localStorage.getItem('user_id') : null;
-          const username = typeof window !== 'undefined' ? localStorage.getItem('username') : null;
-          const email = typeof window !== 'undefined' ? localStorage.getItem('email') : null;
-
-          if (token) {
-            config.setToken(token);
-            console.log('🔐 JWT token restored from localStorage');
-            
-            setUser({
-              user_id: userId,
-              username,
-              email,
-              isLoggedIn: true
-            });
-          } else {
-            console.log('⚠️ No JWT token found in localStorage');
-          }
-
-          // Validate SDK setup
-          const isValid = brdzSDK.utils.validateSDKSetup();
-          
-          setState({
-            sdkReady: true,
-            isLoading: false,
-            error: null,
-            hasApiKey: !!apiKey,
-            hasToken: !!token,
-            baseUrl
-          });
-
-          console.log('✅ SDK initialized successfully');
-          if (isValid) {
-            console.log('✅ SDK setup validation passed');
-          }
-
-          // Mark SDK as initialized
-          sdkInitialized = true;
-
-        } catch (error: any) {
-          console.error('❌ SDK initialization failed:', error);
-          setState({
-            sdkReady: false,
-            isLoading: false,
-            error: error.message || 'SDK initialization failed',
-            hasApiKey: false,
-            hasToken: false,
-            baseUrl: null
-          });
-        } finally {
-          sdkInitPromise = null;
+        console.log('✅ SDK initialized successfully');
+        if (isValid) {
+          console.log('✅ SDK setup validation passed');
         }
-      })();
 
-      await sdkInitPromise;
+      } catch (error: any) {
+        console.error('❌ SDK initialization failed:', error);
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: error.message || 'SDK initialization failed'
+        }));
+      }
     };
 
     initSDK();
-  }, []);
-
-  // Refresh SDK token from localStorage
-  const refreshToken = useCallback(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    if (token) {
-      brdzSDK.config.setToken(token);
-      console.log('🔄 SDK token refreshed from localStorage');
-      return true;
-    }
-    console.log('❌ No token found to refresh');
-    return false;
   }, []);
 
   // Login user and update session
@@ -388,7 +324,6 @@ export const useSDK = () => {
     logout,
     updateToken,
     getUserProfile,
-    refreshToken,
     
     // Utilities
     debugSDK,
@@ -408,8 +343,6 @@ export const useSDK = () => {
     },
     
     get canMakeRequests() {
-      // More lenient: Allow requests if SDK is ready and we have API key
-      // Don't require token initially - user might be logging in
       return state.sdkReady && state.hasApiKey && !state.isLoading;
     }
   };

@@ -103,7 +103,7 @@ declare module '@anantla/brdz-sdk' {
       getClientStats: (clientId: string) => Promise<any>;
     };
 
-    // Cross-Chain Module (6 methods)
+    // Cross-Chain Module (7 methods)
     crosschain: {
       initiateTransfer: (data: any) => Promise<any>;
       confirmTransfer: (data: any) => Promise<any>;
@@ -111,6 +111,7 @@ declare module '@anantla/brdz-sdk' {
       getUSDCBalance: (chain: string, address: string) => Promise<any>;
       testMint: (data: any) => Promise<any>;
       burnToken: (data: any) => Promise<any>;
+      burnTokenFrontend: (data: any) => Promise<any>;
     };
 
     // Crypto Wallet ABSK Module (comprehensive structure)
@@ -295,7 +296,41 @@ declare module '@anantla/brdz-sdk' {
       initOnramp: (data: any) => Promise<any>;
       getOnrampStatus: (txid: string) => Promise<any>;
     };
+
+    // Onchain Transaction Module (20 methods total)
+    onchain: {
+      // Core Operations (5 methods)
+      getFeeSettings: () => Promise<any>;
+      executeTransaction: (data: any) => Promise<any>;
+      logTransaction: (data: any) => Promise<any>;
+      getTransactionHistory: (user_id: number, params?: any) => Promise<any>;
+      getMyTransactionHistory: (params?: any) => Promise<any>;
+      getTransactionDetails: (tx_hash: string) => Promise<any>;
+
+      // Admin Operations (5 methods)
+      admin: {
+        getFeeSettings: () => Promise<any>;
+        updateFeeSettings: (settings: any) => Promise<any>;
+        triggerScan: () => Promise<any>;
+        getScanStats: () => Promise<any>;
+        scanChain: (chain_id: string) => Promise<any>;
+      };
+
+      // Utility Functions (10 methods)
+      utils: {
+        getSupportedChains: () => string[];
+        getSupportedTokens: () => string[];
+        isValidChain: (chain_id: string) => boolean;
+        isValidTxHash: (tx_hash: string) => boolean;
+        isValidAddress: (address: string) => boolean;
+        getExplorerUrl: (chain_id: string, tx_hash: string) => string;
+        getChainName: (chain_id: string) => string;
+        getNativeSymbol: (chain_id: string) => string;
+        calculatePlatformFee: (amount: string, fee_percentage: number, minimum_fee: number) => number;
+        formatAmount: (amount: string, decimals?: number) => string;
+        parseTransactionType: (tx_flow: string) => string;
+      };
+    };
   };
-  
   export default brdzSDK;
 }
