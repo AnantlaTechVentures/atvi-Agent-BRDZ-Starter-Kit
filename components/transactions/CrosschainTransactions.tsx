@@ -20,6 +20,17 @@ import DestinationAddressInput from './crosschain/DestinationAddressInput';
 import CrosschainSteps from './crosschain/CrosschainSteps';
 import CrosschainResult from './crosschain/CrosschainResult';
 
+// Type Definitions untuk SDK Response
+interface SDKResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: {
+    message: string;
+    code?: string;
+  };
+  message?: string;
+}
+
 interface WalletData {
   id: number;
   bw_id: number;
@@ -55,6 +66,27 @@ interface CrosschainStep {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   error?: string;
   retry_count: number;
+}
+
+// SDK Response Interfaces
+interface InitiateTransferResponse {
+  log_id: string;
+  nonce: string;
+  status: string;
+  burn_tx_hash?: string;
+}
+
+interface PrivateKeyResponse {
+  private_key: string;
+  wallet_id: number;
+  chain_id: string;
+}
+
+interface BurnTokenResponse {
+  tx_hash: string;
+  log_id: string;
+  nonce: string;
+  status: string;
 }
 
 const supportedChains = [
@@ -140,16 +172,16 @@ export default function CrosschainTransactions() {
 
     try {
       const userId = typeof user.user_id === 'string' ? parseInt(user.user_id) : user.user_id;
-      const response = await sdk.cryptoWallet.getUserWallets(userId);
+      const response = await sdk.cryptoWallet.getUserWallets(userId) as SDKResponse<{ wallets: any[] }>;
       
       if (response?.success && response?.data?.wallets) {
         const walletsWithAddresses = await Promise.all(
           response.data.wallets.map(async (wallet: any) => {
             try {
-              const addressResponse = await sdk.cryptoWallet.getWalletAddresses(wallet.bw_id);
+              const addressResponse = await sdk.cryptoWallet.getWalletAddresses(wallet.bw_id) as SDKResponse<{ addresses: any[] }>;
               return {
                 ...wallet,
-                addresses: addressResponse?.success ? addressResponse.data.addresses : []
+                addresses: addressResponse?.success ? addressResponse.data?.addresses || [] : []
               };
             } catch (error) {
               return { ...wallet, addresses: [] };
@@ -169,7 +201,7 @@ export default function CrosschainTransactions() {
 
     try {
       const walletId = parseInt(selectedWallet);
-      const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, fromChain);
+      const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, fromChain) as SDKResponse<{ tokens: any[] }>;
       
       if (balanceResponse?.success && balanceResponse?.data) {
         const tokens: TokenData[] = [];
@@ -244,6 +276,16 @@ export default function CrosschainTransactions() {
     }
   };
 
+  // Add chain normalization function for backend
+  const normalizeChainForBackend = (chainId: string): string => {
+    const chainMap: Record<string, string> = {
+      'sepolia': 'Sepolia',
+      'amoy': 'Amoy', 
+      'neon': 'Neon'
+    };
+    return chainMap[chainId.toLowerCase()] || chainId;
+  };
+
   const executeCrosschainTransfer = async () => {
     if (!fromChain || !toChain || !amount || !recipientAddress) {
       throw new Error('Missing required transfer data');
@@ -254,62 +296,65 @@ export default function CrosschainTransactions() {
     let transferData: any = {
       user_id: user?.user_id,
       amount: parseFloat(amount),
-      from_chain: fromChain,
-      to_chain: toChain,
+      from_chain: normalizeChainForBackend(fromChain),
+      to_chain: normalizeChainForBackend(toChain),
       token: selectedToken,
       recipient_address: recipientAddress,
       return_address: currentFromAddress
     };
+
+    console.log('🔍 Sending normalized transfer data:', transferData);
 
     let logId: string = '';
     let nonce: string = '';
     let burnTxHash: string = '';
 
     // Step 1: Initiate Transfer
-    const initiateResult = await executeWithRetry(1, 'Initiate Transfer', async () => {
-      const response = await sdk.crosschain.initiateTransfer(transferData);
+    await executeWithRetry(1, 'Initiate Transfer', async () => {
+      const response = await sdk.crosschain.initiateTransfer(transferData) as SDKResponse<InitiateTransferResponse>;
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to initiate transfer');
       }
-      logId = response.data.log_id;
-      nonce = response.data.nonce;
+      logId = response.data!.log_id;
+      nonce = response.data!.nonce;
       return response.data;
     });
 
     // Step 2: Burn Token menggunakan private key dari frontend wallet
-    const burnResult = await executeWithRetry(2, 'Burn Token', async () => {
+    await executeWithRetry(2, 'Burn Token', async () => {
       // Get private key dari crypto wallet untuk signing
       const privateKeyResponse = await sdk.cryptoWallet.keys.getForSigning(
         parseInt(selectedWallet),
         fromChain,
         'signing'
-      );
+      ) as SDKResponse<PrivateKeyResponse>;
       
       if (!privateKeyResponse?.success || !privateKeyResponse?.data?.private_key) {
         throw new Error('Failed to get private key for signing');
       }
 
+      // Gunakan burnToken karena burnTokenFrontend mungkin tidak ada di SDK
       const response = await sdk.crosschain.burnToken({
         log_id: logId,
         nonce: nonce,
-        private_key: privateKeyResponse.data.private_key,
-        mode: 'frontend'
-      });
+        tx_hash: '', // akan diisi oleh backend
+        mode: 'frontend' // mode untuk indicate ini dari frontend
+      }) as SDKResponse<BurnTokenResponse>;
       
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to burn token');
       }
-      burnTxHash = response.data.tx_hash;
+      burnTxHash = response.data!.tx_hash;
       return response.data;
     });
 
     // Step 3: Confirm Transfer
-    const confirmResult = await executeWithRetry(3, 'Confirm Transfer', async () => {
+    await executeWithRetry(3, 'Confirm Transfer', async () => {
       const response = await sdk.crosschain.confirmTransfer({
         log_id: logId,
         tx_hash: burnTxHash,
         status: 'burned'
-      });
+      }) as SDKResponse;
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to confirm transfer');
       }
@@ -318,7 +363,7 @@ export default function CrosschainTransactions() {
 
     // Step 4: Mint Token
     const mintResult = await executeWithRetry(4, 'Mint Token', async () => {
-      const response = await sdk.crosschain.mintToken(nonce);
+      const response = await sdk.crosschain.mintToken(nonce) as SDKResponse<{ tx_hash: string }>;
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to mint token');
       }
@@ -329,7 +374,7 @@ export default function CrosschainTransactions() {
       log_id: logId,
       nonce: nonce,
       burn_tx_hash: burnTxHash,
-      mint_tx_hash: mintResult.tx_hash,
+      mint_tx_hash: mintResult!.tx_hash,
       status: 'completed'
     };
   };

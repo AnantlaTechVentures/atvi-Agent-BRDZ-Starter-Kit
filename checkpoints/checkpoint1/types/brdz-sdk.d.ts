@@ -105,6 +105,7 @@ declare module '@anantla/brdz-sdk' {
 
     // Cross-Chain Module (6 methods)
     crosschain: {
+      burnTokenFrontend(arg0: { log_id: string; nonce: string; private_key: any; }): unknown;
       initiateTransfer: (data: any) => Promise<any>;
       confirmTransfer: (data: any) => Promise<any>;
       mintToken: (nonce: string) => Promise<any>;
