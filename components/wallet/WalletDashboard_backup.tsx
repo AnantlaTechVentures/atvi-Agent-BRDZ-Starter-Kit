@@ -1159,7 +1159,7 @@ export default function WalletDashboard() {
             <div className="space-y-2">
               <p className="font-medium">Rate Limit Active</p>
               <p className="text-sm text-muted-foreground">
-                We're experiencing high API usage. Please wait while we automatically retry your requests with proper delays.
+                We're experiencing high API usage. Please wait while we autoPOLally retry your requests with proper delays.
               </p>
               <p className="text-xs text-muted-foreground">
                 This helps prevent server overload and ensures reliable service for all users.

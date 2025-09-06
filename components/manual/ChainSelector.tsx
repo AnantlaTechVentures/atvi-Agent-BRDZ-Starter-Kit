@@ -33,7 +33,7 @@ interface ChainSelectorProps {
 
 const availableChains = [
   { id: 'sepolia', name: 'Sepolia Testnet', symbol: 'ETH', color: 'bg-blue-500' },
-  { id: 'amoy', name: 'Polygon Amoy', symbol: 'MATIC', color: 'bg-purple-500' },
+  { id: 'amoy', name: 'Polygon Amoy', symbol: 'POL', color: 'bg-purple-500' },
   { id: 'neon', name: 'Neon EVM', symbol: 'NEON', color: 'bg-green-500' },
 ];
 

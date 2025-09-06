@@ -50,7 +50,7 @@ const supportedChains = [
     id: 'amoy', 
     name: 'Polygon Amoy', 
     shortName: 'Amoy',
-    symbol: 'MATIC', 
+    symbol: 'POL', 
     color: 'bg-purple-500',
     icon: '🟣'
   },

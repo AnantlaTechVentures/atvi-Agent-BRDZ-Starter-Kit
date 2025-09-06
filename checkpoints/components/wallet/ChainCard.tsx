@@ -46,7 +46,7 @@ export default function ChainCard({ chain, onRefresh, onSend, onReceive }: Chain
           shortName: 'Amoy',
           color: 'bg-purple-500', 
           explorer: 'https://amoy.polygonscan.com',
-          nativeSymbol: 'MATIC',
+          nativeSymbol: 'POL',
           chainId: 80002,
           icon: '⬡'
         };

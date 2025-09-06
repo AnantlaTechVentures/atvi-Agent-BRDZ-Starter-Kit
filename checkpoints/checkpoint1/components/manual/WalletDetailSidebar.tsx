@@ -74,7 +74,7 @@ const getChainDisplayName = (chainId: string): string => {
 const getNativeSymbol = (chainId: string, chainBalance?: any, address?: any): string => {
   const fallbackSymbols: { [key: string]: string } = { 
     sepolia: 'ETH', 
-    amoy: 'MATIC', 
+    amoy: 'POL', 
     neon: 'NEON' 
   };
   return chainBalance?.native_symbol || 
