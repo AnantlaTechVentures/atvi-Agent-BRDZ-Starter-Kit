@@ -195,7 +195,7 @@ export default function OnchainTransactions() {
     if (!canMakeRequests) return;
 
     try {
-      const response = await sdk.onchain.getFeeSettings();
+      const response = await (sdk as any).onchain.getFeeSettings();
       if (response?.success && response?.data?.fee_settings) {
         setPlatformFeeSettings(response.data.fee_settings);
       }
@@ -334,7 +334,7 @@ export default function OnchainTransactions() {
       throw new Error('Invalid chain or token selection');
     }
 
-    const response = await sdk.onchain.executeTransaction({
+    const response = await (sdk as any).onchain.executeTransaction({
       user_id: user?.user_id,
       wallet_id: parseInt(selectedWallet),
       chain_id: selectedChain,

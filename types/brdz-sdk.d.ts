@@ -299,7 +299,7 @@ declare module '@anantla/brdz-sdk' {
 
     // Onchain Transaction Module (20 methods total)
     onchain: {
-      // Core Operations (5 methods)
+      // Core Operations (6 methods)
       getFeeSettings: () => Promise<any>;
       executeTransaction: (data: any) => Promise<any>;
       logTransaction: (data: any) => Promise<any>;
