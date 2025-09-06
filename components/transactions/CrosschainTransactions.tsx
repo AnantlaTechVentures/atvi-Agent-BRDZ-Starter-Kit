@@ -24,6 +24,11 @@ import CrosschainResult from './crosschain/CrosschainResult';
 interface SDKResponse<T = any> {
   success: boolean;
   data?: T;
+  tx_hash?: string;
+  mint_tx_hash?: string;
+  log_id?: string;
+  nonce?: string;
+  status?: string;
   error?: {
     message: string;
     code?: string;
@@ -67,25 +72,10 @@ interface CrosschainStep {
   error?: string;
 }
 
-// SDK Response Interfaces
-interface InitiateTransferResponse {
-  log_id: string;
-  nonce: string;
-  status: string;
-  burn_tx_hash?: string;
-}
-
 interface PrivateKeyResponse {
   private_key: string;
   wallet_id: number;
   chain_id: string;
-}
-
-interface BurnTokenResponse {
-  tx_hash: string;
-  log_id: string;
-  nonce: string;
-  status: string;
 }
 
 const supportedChains = [
@@ -357,7 +347,7 @@ export default function CrosschainTransactions() {
       }
       
       // FIXED: Only access response.data.tx_hash for typed response
-      const mintTxHash = response.data?.tx_hash;
+      const mintTxHash = response.tx_hash || response.data?.tx_hash;
       if (!mintTxHash) {
         throw new Error('No mint transaction hash returned');
       }
