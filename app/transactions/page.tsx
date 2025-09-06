@@ -197,6 +197,14 @@ export default function TransactionsPage() {
     return null;
   }
 
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    if (tabParam === 'crosschain') {
+      setActiveTab('crosschain');
+    }
+  }, []);
+
   return (
     <ProtectedLayout>
       <div className="max-w-7xl mx-auto p-6">

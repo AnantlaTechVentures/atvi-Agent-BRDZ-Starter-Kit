@@ -3,6 +3,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSDK } from '@/hooks/useSDK';
 import { Button } from '@/components/ui/button';
@@ -85,6 +86,7 @@ const getNativeSymbol = (chainId: string, chainBalance?: any, address?: any): st
 
 export function WalletDetailSidebar({ wallet, isOpen, onClose, onImportToken }: WalletDetailSidebarProps) {
   const { user } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'tokens' | 'defi' | 'risks'>('tokens');
   const [searchQuery, setSearchQuery] = useState('');
   const [userTokens, setUserTokens] = useState<any>({});
@@ -208,6 +210,14 @@ export function WalletDetailSidebar({ wallet, isOpen, onClose, onImportToken }: 
   const handleRefresh = () => {
     console.log('🔄 Manual refresh triggered...');
     fetchWalletData();
+  };
+
+  const handleSend = () => {
+    router.push('/transactions?tab=onchain');
+  };
+
+  const handleSwap = () => {
+    router.push('/transactions?tab=crosschain');
   };
 
   // Group imported tokens by chain
@@ -527,13 +537,13 @@ export function WalletDetailSidebar({ wallet, isOpen, onClose, onImportToken }: 
         {/* Footer Actions */}
         <div className="p-4 border-t bg-muted/20 flex-shrink-0">
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1">
+            <Button variant="outline" className="flex-1" onClick={handleSend}>
               Send
             </Button>
-            <Button variant="outline" className="flex-1">
+            {/* <Button variant="outline" className="flex-1">
               Receive
-            </Button>
-            <Button variant="outline" className="flex-1">
+            </Button> */}
+            <Button variant="outline" className="flex-1" onClick={handleSwap}>
               Swap
             </Button>
           </div>
