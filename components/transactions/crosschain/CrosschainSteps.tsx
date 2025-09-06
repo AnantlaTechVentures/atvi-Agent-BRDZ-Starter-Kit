@@ -13,7 +13,6 @@ interface CrosschainStep {
   description: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   error?: string;
-  retry_count: number;
 }
 
 interface CrosschainStepsProps {
@@ -86,11 +85,11 @@ export default function CrosschainSteps({ steps, isVisible }: CrosschainStepsPro
                       </Badge>
                     )}
                     
-                    {step.retry_count > 0 && (
+                    {/* {step.retry_count > 0 && (
                       <Badge variant="outline" className="text-orange-600 border-orange-600">
                         Retry {step.retry_count}
                       </Badge>
-                    )}
+                    )} */}
                   </div>
                   
                   <p className="text-xs text-muted-foreground">{step.description}</p>

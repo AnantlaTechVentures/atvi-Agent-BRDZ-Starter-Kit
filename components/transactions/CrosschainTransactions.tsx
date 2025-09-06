@@ -65,7 +65,6 @@ interface CrosschainStep {
   description: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   error?: string;
-  retry_count: number;
 }
 
 // SDK Response Interfaces
@@ -114,10 +113,10 @@ export default function CrosschainTransactions() {
   
   const [transactionResult, setTransactionResult] = useState<CrosschainResult | null>(null);
   const [crosschainSteps, setCrosschainSteps] = useState<CrosschainStep[]>([
-    { id: 1, name: 'Initiate', description: 'Create transfer log', status: 'pending', retry_count: 0 },
-    { id: 2, name: 'Burn', description: 'Burn tokens on source chain', status: 'pending', retry_count: 0 },
-    { id: 3, name: 'Confirm', description: 'Confirm burn transaction', status: 'pending', retry_count: 0 },
-    { id: 4, name: 'Mint', description: 'Mint tokens on destination chain', status: 'pending', retry_count: 0 }
+    { id: 1, name: 'Initiate', description: 'Create transfer log', status: 'pending' },
+    { id: 2, name: 'Burn', description: 'Burn tokens on source chain', status: 'pending' },
+    { id: 3, name: 'Confirm', description: 'Confirm burn transaction', status: 'pending' },
+    { id: 4, name: 'Mint', description: 'Mint tokens on destination chain', status: 'pending' }
   ]);
 
   useEffect(() => {
@@ -232,7 +231,6 @@ export default function CrosschainTransactions() {
     setCrosschainSteps(prev => prev.map(step => ({ 
       ...step, 
       status: 'pending' as const, 
-      retry_count: 0, 
       error: undefined 
     })));
   };
@@ -243,37 +241,6 @@ export default function CrosschainTransactions() {
         ? { ...step, status, error: error || undefined }
         : step
     ));
-  };
-
-  const incrementRetryCount = (stepId: number) => {
-    setCrosschainSteps(prev => prev.map(step => 
-      step.id === stepId 
-        ? { ...step, retry_count: step.retry_count + 1 }
-        : step
-    ));
-  };
-
-  const executeWithRetry = async (stepId: number, stepName: string, fn: () => Promise<any>, maxRetries = 2) => {
-    updateStepStatus(stepId, 'processing');
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await fn();
-        updateStepStatus(stepId, 'completed');
-        return result;
-      } catch (error: any) {
-        console.error(`${stepName} attempt ${attempt + 1} failed:`, error);
-        
-        if (attempt < maxRetries) {
-          incrementRetryCount(stepId);
-          updateStepStatus(stepId, 'processing');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } else {
-          updateStepStatus(stepId, 'failed', error.message || `${stepName} failed`);
-          throw error;
-        }
-      }
-    }
   };
 
   // Add chain normalization function for backend
@@ -310,18 +277,23 @@ export default function CrosschainTransactions() {
     let burnTxHash: string = '';
 
     // Step 1: Initiate Transfer
-    await executeWithRetry(1, 'Initiate Transfer', async () => {
+    updateStepStatus(1, 'processing');
+    try {
       const response = await sdk.crosschain.initiateTransfer(transferData) as any;
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to initiate transfer');
       }
       logId = response.log_id;
       nonce = response.nonce;
-      return response.data;
-    });
+      updateStepStatus(1, 'completed');
+    } catch (error: any) {
+      updateStepStatus(1, 'failed', error.message);
+      throw error;
+    }
 
     // Step 2: Burn Token menggunakan private key dari frontend wallet
-    await executeWithRetry(2, 'Burn Token', async () => {
+    updateStepStatus(2, 'processing');
+    try {
       // Get private key dari crypto wallet untuk signing
       const privateKeyResponse = await sdk.cryptoWallet.keys.getForSigning(
         parseInt(selectedWallet),
@@ -333,7 +305,7 @@ export default function CrosschainTransactions() {
         throw new Error('Failed to get private key for signing');
       }
 
-      // Gunakan burnToken karena burnTokenFrontend mungkin tidak ada di SDK
+      // Execute burn token
       const response = await sdk.crosschain.burnTokenFrontend({
         log_id: logId,
         nonce: nonce,
@@ -343,39 +315,66 @@ export default function CrosschainTransactions() {
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to burn token');
       }
-      burnTxHash = response.data!.tx_hash;
-      return response.data;
-    });
+      
+      // Fix response parsing - handle different response structures
+      burnTxHash = response.data?.tx_hash || response.tx_hash;
+      if (!burnTxHash) {
+        throw new Error('No transaction hash returned from burn operation');
+      }
+      
+      updateStepStatus(2, 'completed');
+    } catch (error: any) {
+      updateStepStatus(2, 'failed', error.message);
+      throw error;
+    }
 
     // Step 3: Confirm Transfer
-    await executeWithRetry(3, 'Confirm Transfer', async () => {
+    updateStepStatus(3, 'processing');
+    try {
       const response = await sdk.crosschain.confirmTransfer({
         log_id: logId,
         tx_hash: burnTxHash,
         status: 'burned'
       }) as SDKResponse;
+      
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to confirm transfer');
       }
-      return response.data;
-    });
+      
+      updateStepStatus(3, 'completed');
+    } catch (error: any) {
+      updateStepStatus(3, 'failed', error.message);
+      throw error;
+    }
 
     // Step 4: Mint Token
-    const mintResult = await executeWithRetry(4, 'Mint Token', async () => {
+    updateStepStatus(4, 'processing');
+    try {
       const response = await sdk.crosschain.mintToken(nonce) as SDKResponse<{ tx_hash: string }>;
+      
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to mint token');
       }
-      return response.data;
-    });
-
-    return {
-      log_id: logId,
-      nonce: nonce,
-      burn_tx_hash: burnTxHash,
-      mint_tx_hash: mintResult!.tx_hash,
-      status: 'completed'
-    };
+      
+      // FIXED: Only access response.data.tx_hash for typed response
+      const mintTxHash = response.data?.tx_hash;
+      if (!mintTxHash) {
+        throw new Error('No mint transaction hash returned');
+      }
+      
+      updateStepStatus(4, 'completed');
+      
+      return {
+        log_id: logId,
+        nonce: nonce,
+        burn_tx_hash: burnTxHash,
+        mint_tx_hash: mintTxHash,
+        status: 'completed'
+      };
+    } catch (error: any) {
+      updateStepStatus(4, 'failed', error.message);
+      throw error;
+    }
   };
 
   const handleSubmitCrosschainTransfer = async (e: React.FormEvent) => {
