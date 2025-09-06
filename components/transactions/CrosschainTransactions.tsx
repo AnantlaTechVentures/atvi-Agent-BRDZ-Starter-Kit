@@ -607,6 +607,29 @@ export default function CrosschainTransactions() {
             </CardContent>
           </Card>
         )}
+
+        {/* Bridge Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Crosschain Bridge Info</CardTitle>
+          </CardHeader>
+          
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>• Transfer tokens between different blockchain networks</p>
+            <p>• Takes 5-15 minutes to complete (burn + mint process)</p>
+            <p>• Bridge fee: ~0.3% of transfer amount</p>
+            <p>• Only supports BRDZ USDC tokens with paired bridge contracts:</p>
+
+              <p>Sepolia: 0x9BF350f...78f435</p>
+              <p>Polygon: 0xC15239B...091C7CE85FF31b983</p>
+              <p>Neon: 0xB5234C0...8d2E6065</p>
+
+            <p>• Uses your crypto wallet for secure transaction signing</p>
+            <p>• Platform fees calculated on transfer amount</p>
+            <p>• For custom USDC/Bridge contracts, contact BRDZ support at <a href="https://www.anantla.org/contact" target="_blank" className="text-blue-600 underline">anantla.org/contact</a></p>
+          </CardContent>
+        </Card>
+
       </div>
     </div>
   );

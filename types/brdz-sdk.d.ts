@@ -103,7 +103,7 @@ declare module '@anantla/brdz-sdk' {
       getClientStats: (clientId: string) => Promise<any>;
     };
 
-    // Cross-Chain Module (7 methods)
+    // Cross-Chain Module (9 methods)
     crosschain: {
       initiateTransfer: (data: any) => Promise<any>;
       confirmTransfer: (data: any) => Promise<any>;
@@ -112,6 +112,8 @@ declare module '@anantla/brdz-sdk' {
       testMint: (data: any) => Promise<any>;
       burnToken: (data: any) => Promise<any>;
       burnTokenFrontend: (data: any) => Promise<any>;
+      getCTransactionHistory: (user_id: number, params?: any) => Promise<any>;
+      getCTransactionDetails: (log_id: string) => Promise<any>;
     };
 
     // Crypto Wallet ABSK Module (comprehensive structure)

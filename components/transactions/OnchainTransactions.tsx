@@ -204,38 +204,82 @@ export default function OnchainTransactions() {
     }
   };
 
-  const loadChainTokens = async () => {
-    if (!selectedWallet || !selectedChain || !canMakeRequests) return;
+  // const loadChainTokens = async () => {
+  //   if (!selectedWallet || !selectedChain || !canMakeRequests) return;
 
-    try {
-      const walletId = parseInt(selectedWallet);
-      const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, selectedChain);
+  //   try {
+  //     const walletId = parseInt(selectedWallet);
+  //     const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, selectedChain);
       
-      if (balanceResponse?.success && balanceResponse?.data) {
-        const tokens: TokenData[] = [];
+  //     if (balanceResponse?.success && balanceResponse?.data) {
+  //       const tokens: TokenData[] = [];
         
-        // Add native token
-        const chainInfo = supportedChains.find(chain => chain.id === selectedChain);
-        if (chainInfo && balanceResponse.data.native_balance) {
-          tokens.push({
-            symbol: chainInfo.symbol,
-            balance: balanceResponse.data.native_balance.balance || '0',
-            contract_address: 'native',
-            name: `${chainInfo.name} Native Token`,
-            decimals: 18
-          });
-        }
+  //       // Add native token
+  //       const chainInfo = supportedChains.find(chain => chain.id === selectedChain);
+  //       if (chainInfo && balanceResponse.data.native_balance) {
+  //         tokens.push({
+  //           symbol: chainInfo.symbol,
+  //           balance: balanceResponse.data.native_balance.balance || '0',
+  //           contract_address: 'native',
+  //           name: `${chainInfo.name} Native Token`,
+  //           decimals: 18
+  //         });
+  //       }
         
-        // Add imported tokens with decimals
-        if (balanceResponse.data.tokens && Array.isArray(balanceResponse.data.tokens)) {
-          const tokensWithDecimals = await Promise.all(
-            balanceResponse.data.tokens.map(async (token: any) => ({
-              ...token,
-              decimals: token.decimals || (token.symbol === 'USDC' ? 6 : 18)
-            }))
-          );
-          tokens.push(...tokensWithDecimals);
-        }
+  //       // Add imported tokens with decimals
+  //       if (balanceResponse.data.tokens && Array.isArray(balanceResponse.data.tokens)) {
+  //         const tokensWithDecimals = await Promise.all(
+  //           balanceResponse.data.tokens.map(async (token: any) => ({
+  //             ...token,
+  //             decimals: token.decimals || (token.symbol === 'USDC' ? 6 : 18)
+  //           }))
+  //         );
+  //         tokens.push(...tokensWithDecimals);
+  //       }
+  const loadChainTokens = async () => {
+      if (!selectedWallet || !selectedChain || !canMakeRequests) return;
+
+      try {
+        const walletId = parseInt(selectedWallet);
+        const balanceResponse = await sdk.cryptoWallet.balance.getChain(walletId, selectedChain);
+        
+        console.log(`[DEBUG] Balance response for wallet ${walletId} on ${selectedChain}:`, balanceResponse);
+        
+        if (balanceResponse?.success && balanceResponse?.data) {
+          const tokens: TokenData[] = [];
+          
+          // Add native token
+          const chainInfo = supportedChains.find(chain => chain.id === selectedChain);
+          if (chainInfo && balanceResponse.data.native_balance) {
+            console.log(`[DEBUG] Native balance:`, balanceResponse.data.native_balance);
+            tokens.push({
+              symbol: chainInfo.symbol,
+              balance: balanceResponse.data.native_balance.balance || '0',
+              contract_address: 'native',
+              name: `${chainInfo.name} Native Token`,
+              decimals: 18
+            });
+          }
+          
+          // Add imported tokens with decimals
+          if (balanceResponse.data.tokens && Array.isArray(balanceResponse.data.tokens)) {
+            console.log(`[DEBUG] Imported tokens:`, balanceResponse.data.tokens);
+            const tokensWithDecimals = await Promise.all(
+              balanceResponse.data.tokens.map(async (token: any) => {
+                const tokenWithDecimals = {
+                  ...token,
+                  decimals: token.decimals || (token.symbol === 'USDC' ? 6 : 18)
+                };
+                console.log(`[DEBUG] Token ${token.symbol}:`, {
+                  balance: token.balance,
+                  contract_address: token.contract_address,
+                  decimals: tokenWithDecimals.decimals
+                });
+                return tokenWithDecimals;
+              })
+            );
+            tokens.push(...tokensWithDecimals);
+          }
         
         setAvailableTokens(tokens);
         
