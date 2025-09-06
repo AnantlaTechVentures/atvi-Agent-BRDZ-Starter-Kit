@@ -311,12 +311,12 @@ export default function CrosschainTransactions() {
 
     // Step 1: Initiate Transfer
     await executeWithRetry(1, 'Initiate Transfer', async () => {
-      const response = await sdk.crosschain.initiateTransfer(transferData) as SDKResponse<InitiateTransferResponse>;
+      const response = await sdk.crosschain.initiateTransfer(transferData) as any;
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to initiate transfer');
       }
-      logId = response.data!.log_id;
-      nonce = response.data!.nonce;
+      logId = response.log_id;
+      nonce = response.nonce;
       return response.data;
     });
 
@@ -334,12 +334,11 @@ export default function CrosschainTransactions() {
       }
 
       // Gunakan burnToken karena burnTokenFrontend mungkin tidak ada di SDK
-      const response = await sdk.crosschain.burnToken({
+      const response = await sdk.crosschain.burnTokenFrontend({
         log_id: logId,
         nonce: nonce,
-        tx_hash: '', // akan diisi oleh backend
-        mode: 'frontend' // mode untuk indicate ini dari frontend
-      }) as SDKResponse<BurnTokenResponse>;
+        private_key: privateKeyResponse.data.private_key
+      }) as any;
       
       if (!response?.success) {
         throw new Error(response?.error?.message || 'Failed to burn token');
