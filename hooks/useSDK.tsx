@@ -330,7 +330,7 @@ export const useSDK = () => {
     testConnection,
     
     // SDK access
-    sdk: brdzSDK,
+    sdk: brdzSDK as any,
     shortcuts,
     
     // Helper getters
