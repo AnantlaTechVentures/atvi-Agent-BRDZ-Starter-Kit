@@ -4,11 +4,11 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, User, Wallet, ArrowUpRight, Copy } from 'lucide-react';
+import { Bot, User, Wallet, ArrowUpRight, Copy, Info } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'ai';
+  type: 'user' | 'ai' | 'system'; // FIXED: Added 'system' type
   text: string;
   timestamp: string;
   actions?: string[];
@@ -22,6 +22,7 @@ interface MessageBubbleProps {
 
 export default function MessageBubble({ message, onActionClick }: MessageBubbleProps) {
   const isUser = message.type === 'user';
+  const isSystem = message.type === 'system'; // ADDED: System message check
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], { 
     hour: '2-digit', 
     minute: '2-digit' 
@@ -162,6 +163,42 @@ export default function MessageBubble({ message, onActionClick }: MessageBubbleP
     return null;
   };
 
+  // ADDED: Special rendering for system messages
+  if (isSystem) {
+    return (
+      <div className="flex justify-center mb-4">
+        <div className="max-w-[90%] bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-blue-600 flex-shrink-0" />
+            <p className="text-sm text-blue-800">{message.text}</p>
+          </div>
+          
+          <p className="text-xs text-blue-600 mt-1 text-center">
+            {timestamp}
+          </p>
+
+          {/* Action Buttons for System Messages */}
+          {message.actions && message.actions.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3 justify-center">
+              {message.actions.map((action, index) => (
+                <Button
+                  key={index}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onActionClick?.(action)}
+                  className="text-xs h-7 px-2 border-blue-300 text-blue-700 hover:bg-blue-100"
+                >
+                  {action}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Original rendering for user and ai messages
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} gap-3 mb-4`}>
       {!isUser && (
