@@ -31,6 +31,71 @@ declare module '@anantla/brdz-sdk' {
     context?: any;
   }
 
+  // NEW: AI Agent Response Interfaces
+  interface AIResponse {
+    success: boolean;
+    agent_response: {
+      user_input: string;
+      ai_response: string;
+      message: string;
+      intent_type: string;
+      completed: boolean;
+      cancelled: boolean;
+      requires_onboarding: boolean;
+      requires_input: boolean;
+      missing_parameter?: string;
+      available_options?: any[];
+      suggested_actions?: string[];
+      data?: any;
+      execution_result?: any;
+      conversation_state: {
+        onboarding_required: boolean;
+        input_required: boolean;
+        completed: boolean;
+        cancelled: boolean;
+        has_data: boolean;
+      };
+    };
+    timestamp: string;
+  }
+
+  interface AIHealthStatus {
+    success: boolean;
+    message: string;
+    service_status: {
+      database_connection: string;
+      service_response: string;
+      environment_checks: {
+        groq_configured: boolean;
+        usdc_sepolia: boolean;
+        usdc_amoy: boolean;
+        usdc_neon: boolean;
+        rpc_sepolia: boolean;
+        rpc_amoy: boolean;
+        rpc_neon: boolean;
+      };
+      fully_configured: boolean;
+    };
+    timestamp: string;
+  }
+
+  interface ConversationSession {
+    success: boolean;
+    data: {
+      user_id: number;
+      session: {
+        session_id: string;
+        current_intent: string;
+        context_data: any;
+        missing_parameters: string[];
+        created_at: string;
+        updated_at: string;
+        expires_at: string;
+      };
+    };
+    timestamp: string;
+  }
+
   // Main SDK Declaration
   const brdzSDK: {
     // Configuration Module (6 methods)
@@ -116,7 +181,7 @@ declare module '@anantla/brdz-sdk' {
       getCTransactionDetails: (log_id: string) => Promise<any>;
     };
 
-    // Crypto Wallet ABSK Module (comprehensive structure)
+    // Crypto Wallet ABSK Module - ENHANCED WITH AI AGENT
     cryptoWallet: {
       // Manual Operations
       createWallet: (data: WalletData) => Promise<any>;
@@ -125,12 +190,49 @@ declare module '@anantla/brdz-sdk' {
       getWalletAddresses: (bw_id: number) => Promise<any>;
       deleteWallet: (bw_id: number, data: any) => Promise<any>;
 
-      // AI Agent Operations
-      processAIIntent: (data: AIIntentData) => Promise<any>;
+      // NEW: AI Agent Core Operations
+      processAIIntent: (data: AIIntentData) => Promise<AIResponse>;
+      checkAIHealth: () => Promise<AIHealthStatus>;
+      clearAISession: (user_id: number) => Promise<any>;
+      getActiveAISession: (user_id: number) => Promise<ConversationSession>;
+
+      // NEW: Enhanced AI Operations
       ai: {
-        createWallet: (user_input: string, user_id: number) => Promise<any>;
-        listWallets: (user_input: string, user_id: number) => Promise<any>;
-        addChain: (user_input: string, user_id: number, wallet_id?: number) => Promise<any>;
+        // Core conversation
+        chat: (user_input: string, user_id: number, context?: any) => Promise<AIResponse>;
+        
+        // Specific operations
+        createWallet: (user_input: string, user_id: number) => Promise<AIResponse>;
+        listWallets: (user_input: string, user_id: number) => Promise<AIResponse>;
+        addChain: (user_input: string, user_id: number, wallet_id?: number) => Promise<AIResponse>;
+        checkBalance: (user_input: string, user_id: number, wallet_id?: number) => Promise<AIResponse>;
+        sendTransaction: (user_input: string, user_id: number, transaction_context?: any) => Promise<AIResponse>;
+        getHistory: (user_input: string, user_id: number) => Promise<AIResponse>;
+
+        // Session management
+        session: {
+          clear: (user_id: number) => Promise<any>;
+          getActive: (user_id: number) => Promise<ConversationSession>;
+          hasActive: (user_id: number) => Promise<boolean>;
+        };
+
+        // Service utilities
+        service: {
+          health: () => Promise<AIHealthStatus>;
+          validateConfig: () => Promise<boolean>;
+          getStatus: () => Promise<any>;
+        };
+      };
+
+      // NEW: Conversation Flow Management
+      conversation: {
+        start: (message: string, user_id: number) => Promise<AIResponse>;
+        continue: (message: string, user_id: number) => Promise<AIResponse>;
+        end: (user_id: number) => Promise<any>;
+        getStatus: (user_id: number) => Promise<{
+          hasActive: boolean;
+          session: any;
+        }>;
       };
 
       // Transaction Operations
@@ -160,7 +262,7 @@ declare module '@anantla/brdz-sdk' {
         getUSDC: (wallet_id: number, chain_id: string) => Promise<any>;
       };
 
-      // Utility Functions
+      // Enhanced Utility Functions
       utils: {
         getSupportedChains: () => string[];
         isValidChain: (chain_id: string) => boolean;
@@ -168,6 +270,25 @@ declare module '@anantla/brdz-sdk' {
         formatBalance: (balance: string, decimals?: number, precision?: number) => string;
         getChainName: (chain_id: string) => string;
         getNativeSymbol: (chain_id: string) => string;
+
+        // NEW: AI conversation utilities
+        ai: {
+          parseResponse: (response: AIResponse) => {
+            message: string;
+            intent_type: string;
+            completed: boolean;
+            cancelled: boolean;
+            requires_input: boolean;
+            requires_onboarding: boolean;
+            missing_parameter?: string;
+            available_options?: any[];
+            execution_result?: any;
+            conversation_state: any;
+          } | null;
+          needsInput: (response: AIResponse) => boolean;
+          isComplete: (response: AIResponse) => boolean;
+          getNextActions: (response: AIResponse) => any[];
+        };
       };
     };
 
