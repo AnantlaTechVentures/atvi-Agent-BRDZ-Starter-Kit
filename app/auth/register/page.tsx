@@ -1,3 +1,5 @@
+//Path: app/auth/login/page.tsx
+
 import RegisterForm from '@/components/auth/RegisterForm';
 import AuthLayout from '@/components/auth/AuthLayout';
 

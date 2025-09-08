@@ -1,3 +1,5 @@
+//Path: app\auth\login\page.tsx
+
 import LoginForm from '@/components/auth/LoginForm';
 import AuthLayout from '@/components/auth/AuthLayout';
 
