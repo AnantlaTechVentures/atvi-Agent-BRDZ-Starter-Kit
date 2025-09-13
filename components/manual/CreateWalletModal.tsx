@@ -63,7 +63,15 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successData, setSuccessData] = useState<{ mnemonic: string; walletName: string } | null>(null);
+  const [successData, setSuccessData] = useState<{ 
+    chainMnemonics: Array<{
+      chainId: string;
+      chainName: string; 
+      mnemonic: string;
+      address: string;
+    }>; 
+    walletName: string 
+  } | null>(null);
 
   const filteredBlockchains = blockchainOptions.filter(blockchain =>
     blockchain.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -97,21 +105,25 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
       return;
     }
 
+    if (selectedBlockchains.length === 0) {
+      setError('Please select at least one blockchain');
+      return;
+    }
+
     try {
       setIsCreating(true);
       setError(null);
 
       const userId = typeof user.user_id === 'string' ? parseInt(user.user_id) : user.user_id;
 
-
-
       // Step 1: Create the wallet
+      const primaryChainId = selectedBlockchains[0]; // ← TAMBAH INI
+
       const createResponse = await sdk.cryptoWallet.createWallet({
         wallet_name: walletName.trim(),
-        user_id: userId
+        user_id: userId,
+        chain_id: primaryChainId  // ← TAMBAH INI
       });
-
-
 
       // Fix: Handle backend response structure
       if (!createResponse?.success) {
@@ -129,23 +141,16 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
         throw new Error('Wallet created but no ID returned');
       }
 
-
-
       // Step 2: Add selected blockchains if any
       const chainResults = [];
       if (selectedBlockchains.length > 0) {
-
-        
+       
         for (const chainId of selectedBlockchains) {
-          try {
-
-            
+          try {         
             const chainResponse = await sdk.cryptoWallet.addChainAddress(bwId, { 
               chain_id: chainId 
-            });
-            
+            });        
 
-            
             if (chainResponse?.success) {
               chainResults.push({
                 chain: chainId,
@@ -191,9 +196,18 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
 
       // Show mnemonic backup reminder if any chains were added
       if (successfulChains.length > 0) {
-        const mnemonic = successfulChains[0]?.mnemonic;
-        if (mnemonic) {
-          setSuccessData({ mnemonic, walletName: walletName.trim() });
+        const chainMnemonics = successfulChains.map(chain => ({
+          chainId: chain.chain,
+          chainName: blockchainOptions.find(b => b.id === chain.chain)?.name || chain.chain,
+          mnemonic: chain.mnemonic,
+          address: chain.address
+        })).filter(item => item.mnemonic);
+        
+        if (chainMnemonics.length > 0) {
+          setSuccessData({ 
+            chainMnemonics, 
+            walletName: walletName.trim() 
+          });
           setShowSuccessModal(true);
           return; // Don't close modal yet, show success modal first
         }
@@ -237,10 +251,6 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
     onWalletCreated();
     handleClose();
   };
-
-
-  
-
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -427,10 +437,22 @@ export function CreateWalletModal({ isOpen, onClose, onWalletCreated }: CreateWa
                       This phrase is the key to your wallet. Write it down and keep it safe - it will not be shown again!
                     </p>
                     
-                    <div className="bg-white border border-amber-300 rounded-lg p-3">
-                      <p className="text-xs font-mono text-amber-800 leading-relaxed break-words">
-                        {successData?.mnemonic}
-                      </p>
+                    <div className="space-y-3">
+                      {successData?.chainMnemonics.map((chain, index) => (
+                        <div key={chain.chainId} className="bg-white border border-amber-300 rounded-lg p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-semibold text-amber-800">
+                              {blockchainOptions.find(b => b.id === chain.chainId)?.icon} {chain.chainName}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              {chain.address?.slice(0,6)}...{chain.address?.slice(-4)}
+                            </Badge>
+                          </div>
+                          <p className="text-xs font-mono text-amber-800 leading-relaxed break-words bg-amber-50 p-2 rounded">
+                            {chain.mnemonic}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
